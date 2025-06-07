@@ -99,7 +99,7 @@ pub fn main() {
     let result = solver.solve(&built_constraints, initial_solution);
 
     match result {
-        Ok(Some(solution)) => {
+        Ok((Some(solution), stats)) => {
             println!("Solution found!");
             for (var, domain) in solution.domains.iter() {
                 println!(
@@ -108,8 +108,12 @@ pub fn main() {
                     domain.get_singleton_value().unwrap()
                 );
             }
+            println!("\nStats:\n{:#?}", stats);
         }
-        Ok(None) => println!("No solution found."),
+        Ok((None, stats)) => {
+            println!("No solution found.");
+            println!("\nStats:\n{:#?}", stats);
+        }
         Err(e) => eprintln!("An error occurred: {}", e),
     }
 }
@@ -133,7 +137,7 @@ mod tests {
         let result = solver.solve(&built_constraints, initial_solution);
 
         assert!(result.is_ok());
-        let maybe_solution = result.unwrap();
+        let (maybe_solution, _stats) = result.unwrap();
         assert!(maybe_solution.is_some());
 
         let solution = maybe_solution.unwrap();
@@ -232,7 +236,7 @@ mod tests {
 
                 assert!(result.is_ok());
 
-                if let Some(solution) = result.unwrap() {
+                if let (Some(solution), _stats) = result.unwrap() {
                     // If a solution is found, it must be valid.
                     for (u, v) in adjacencies {
                         let colour_u = solution.domains.get(&u).unwrap().get_singleton_value();

@@ -22,6 +22,19 @@ pub trait ValueArithmetic: ValueEquality {
     fn add(&self, other: &Self) -> Self;
     /// Subtracts one value from another.
     fn sub(&self, other: &Self) -> Self;
+    /// Returns the absolute value of the value.
+    fn abs(&self) -> Self;
+}
+
+/// A capability trait for values that can be represented as a continuous range.
+///
+/// This is essential for the `RangeDomain` representation, allowing it to iterate
+/// and calculate its size.
+pub trait ValueRange: ValueOrdering {
+    /// Returns the next value in the sequence.
+    fn successor(&self) -> Self;
+    /// Calculates the number of steps between two values.
+    fn distance(&self, other: &Self) -> u64;
 }
 
 /// A concrete enum providing standard, reusable implementations of value capabilities.
@@ -62,6 +75,29 @@ impl ValueArithmetic for StandardValue {
         match (self, other) {
             (StandardValue::Int(a), StandardValue::Int(b)) => StandardValue::Int(a - b),
             _ => panic!("Arithmetic sub is only supported for Int types"),
+        }
+    }
+
+    fn abs(&self) -> Self {
+        match self {
+            StandardValue::Int(a) => StandardValue::Int(a.abs()),
+            _ => panic!("Arithmetic abs is only supported for Int types"),
+        }
+    }
+}
+
+impl ValueRange for StandardValue {
+    fn successor(&self) -> Self {
+        match self {
+            StandardValue::Int(a) => StandardValue::Int(a + 1),
+            _ => panic!("Successor is only supported for Int types"),
+        }
+    }
+
+    fn distance(&self, other: &Self) -> u64 {
+        match (self, other) {
+            (StandardValue::Int(a), StandardValue::Int(b)) => b.abs_diff(*a),
+            _ => panic!("Distance is only supported for Int types"),
         }
     }
 }

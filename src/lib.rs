@@ -68,7 +68,8 @@
 //!
 //! // 4. Solve!
 //! let solver = SolverEngine::new();
-//! let solution = solver.solve(&built, initial_solution).unwrap().unwrap();
+//! let (solution, _stats) = solver.solve(&built, initial_solution).unwrap();
+//! let solution = solution.unwrap();
 //!
 //! let final_a_val = solution.domains.get(&a).unwrap().get_singleton_value().unwrap();
 //! assert_eq!(final_a_val, MyValue::Std(StandardValue::Int(2)));

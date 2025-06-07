@@ -4,7 +4,7 @@ use im::HashMap;
 use plico::solver::{
     constraint::Constraint,
     constraints::all_different::AllDifferentConstraint,
-    engine::SolverEngine,
+    engine::{SearchStats, SolverEngine},
     semantics::DomainSemantics,
     solution::{DomainRepresentation, HashSetDomain, Solution},
     value::StandardValue,
@@ -31,7 +31,11 @@ impl DomainSemantics for SudokuSemantics {
 }
 
 /// Solves a hardcoded Sudoku puzzle and returns the solution and variable map.
-pub fn solve_hardcoded_puzzle() -> (Option<Solution<SudokuSemantics>>, Vec<Vec<u32>>) {
+pub fn solve_hardcoded_puzzle() -> (
+    Option<Solution<SudokuSemantics>>,
+    SearchStats,
+    Vec<Vec<u32>>,
+) {
     let puzzle = [
         [5, 3, 0, 0, 7, 0, 0, 0, 0],
         [6, 0, 0, 1, 9, 5, 0, 0, 0],
@@ -100,10 +104,8 @@ pub fn solve_hardcoded_puzzle() -> (Option<Solution<SudokuSemantics>>, Vec<Vec<u
         .collect();
 
     let solver = SolverEngine::new();
-    (
-        solver.solve(&built_constraints, initial_solution).unwrap(),
-        variables,
-    )
+    let (solution, stats) = solver.solve(&built_constraints, initial_solution).unwrap();
+    (solution, stats, variables)
 }
 
 fn print_grid(solution: &Solution<SudokuSemantics>, variables: &[Vec<u32>]) {
@@ -135,10 +137,11 @@ fn print_grid(solution: &Solution<SudokuSemantics>, variables: &[Vec<u32>]) {
 pub fn main() {
     tracing_subscriber::fmt::init();
     println!("Solving hardcoded Sudoku puzzle...");
-    let (maybe_solution, variables) = solve_hardcoded_puzzle();
+    let (maybe_solution, stats, variables) = solve_hardcoded_puzzle();
     if let Some(solution) = maybe_solution {
         println!("Solution found!");
         print_grid(&solution, &variables);
+        println!("\nStats:\n{:#?}", stats);
     } else {
         println!("No solution found for the hardcoded puzzle.");
     }
@@ -151,7 +154,7 @@ mod tests {
     use im::HashMap;
     use plico::solver::{
         constraints::all_different::AllDifferentConstraint,
-        engine::SolverEngine,
+        engine::{SearchStats, SolverEngine},
         semantics::DomainSemantics,
         solution::{DomainRepresentation, HashSetDomain, Solution},
         value::StandardValue,
@@ -164,7 +167,7 @@ mod tests {
     fn test_sudoku_solver() {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let (solution, variables) = solve_hardcoded_puzzle();
+        let (solution, _stats, variables) = solve_hardcoded_puzzle();
         let solution = solution.unwrap();
 
         let cell_0_2 = solution.domains.get(&variables[0][2]).unwrap();
@@ -253,14 +256,8 @@ mod tests {
             .collect();
 
         let solver = SolverEngine::new();
-        let result = solver.solve(&built_constraints, initial_solution);
-
-        assert!(result.is_ok());
-        let maybe_solution = result.unwrap();
-        assert!(
-            maybe_solution.is_none(),
-            "Solver found a solution for an unsolvable puzzle"
-        );
+        let (solution, _stats) = solver.solve(&built_constraints, initial_solution).unwrap();
+        assert!(solution.is_none());
     }
 
     #[test]

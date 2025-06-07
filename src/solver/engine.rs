@@ -15,6 +15,13 @@ use crate::{
 pub type VariableId = u32;
 pub type ConstraintId = usize;
 
+#[derive(Debug, Default)]
+pub struct SearchStats {
+    pub nodes_visited: u64,
+    pub backtracks: u64,
+    pub revisions: u64,
+}
+
 /// The main engine for solving constraint satisfaction problems.
 ///
 /// The `SolverEngine` is responsible for taking a problem definition—a set of
@@ -54,27 +61,32 @@ impl SolverEngine {
         &self,
         constraints: &[Box<dyn Constraint<S>>],
         initial_solution: Solution<S>,
-    ) -> Result<Option<Solution<S>>> {
+    ) -> Result<(Option<Solution<S>>, SearchStats)> {
+        let mut stats = SearchStats::default();
         // First, run the propagation loop to establish arc consistency.
-        let arc_consistent_solution = self.arc_consistency(constraints, initial_solution)?;
+        let arc_consistent_solution =
+            self.arc_consistency(constraints, initial_solution, &mut stats)?;
 
         // If propagation alone solved it or proved it unsolvable, we're done.
         let Some(solution) = arc_consistent_solution else {
-            return Ok(None);
+            return Ok((None, stats));
         };
         if solution.is_complete() {
-            return Ok(Some(solution));
+            return Ok((Some(solution), stats));
         }
 
         // Otherwise, start the search.
-        self.search(constraints, solution)
+        let search_result = self.search(constraints, solution, &mut stats)?;
+        Ok((search_result, stats))
     }
 
     fn search<S: DomainSemantics + std::fmt::Debug>(
         &self,
         constraints: &[Box<dyn Constraint<S>>],
         solution: Solution<S>,
+        stats: &mut SearchStats,
     ) -> Result<Option<Solution<S>>> {
+        stats.nodes_visited += 1;
         // Base case: If the solution is complete, we've found a valid assignment.
         if solution.is_complete() {
             return Ok(Some(solution));
@@ -99,9 +111,13 @@ impl SolverEngine {
             };
 
             // Propagate constraints with the new assignment.
-            if let Some(propagated_solution) = self.arc_consistency(constraints, guess_solution)? {
+            if let Some(propagated_solution) =
+                self.arc_consistency(constraints, guess_solution, stats)?
+            {
                 // If propagation succeeded, recurse.
-                if let Some(found_solution) = self.search(constraints, propagated_solution)? {
+                if let Some(found_solution) =
+                    self.search(constraints, propagated_solution, stats)?
+                {
                     return Ok(Some(found_solution));
                 }
             }
@@ -109,14 +125,16 @@ impl SolverEngine {
         }
 
         // If we've tried all values for this variable and found no solution, this path is a dead end.
+        stats.backtracks += 1;
         Ok(None)
     }
 
     /// Establishes arc-consistency using the AC-3 algorithm.
-    fn arc_consistency<S: DomainSemantics + std::fmt::Debug>(
+    pub fn arc_consistency<S: DomainSemantics + std::fmt::Debug>(
         &self,
         constraints: &[Box<dyn Constraint<S>>],
         initial_solution: Solution<S>,
+        stats: &mut SearchStats,
     ) -> Result<Option<Solution<S>>> {
         let mut solution = initial_solution;
 
@@ -141,6 +159,7 @@ impl SolverEngine {
             let constraint = &constraints[constraint_id];
 
             if let Some(new_solution) = constraint.revise(&target_var, &solution)? {
+                stats.revisions += 1;
                 let old_domain_size = solution.domains.get(&target_var).unwrap().len();
                 let new_domain_size = new_solution.domains.get(&target_var).unwrap().len();
 
