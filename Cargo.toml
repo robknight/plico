@@ -15,5 +15,8 @@ thiserror = "1.0.50"
 tracing = "0.1"
 
 [dev-dependencies]
+pretty_assertions = "1.4.1"
 proptest = "1.6.0"
+sudoku = "0.8.0"
 tracing-subscriber = "0.3"
+
