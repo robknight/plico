@@ -9,6 +9,10 @@ use plico::solver::{
         all_different::AllDifferentConstraint,
     },
     engine::{SolverEngine, VariableId},
+    heuristics::{
+        value::IdentityValueHeuristic,
+        variable::{MinRemainingValuesHeuristic, SelectFirstHeuristic},
+    },
     semantics::DomainSemantics,
     solution::{DomainRepresentation, HashSetDomain, Solution},
     value::{StandardValue, ValueArithmetic},
@@ -121,21 +125,70 @@ fn n_queens_problem_setup(
     (built_constraints, initial_solution)
 }
 
+fn n_queens_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("N-Queens Heuristics");
+    let board_size = 10; // A reasonably complex size for benchmarking
+
+    // Setup the problem once
+    let (built_constraints, initial_solution) = n_queens_problem_setup(board_size);
+
+    // Benchmark with SelectFirstHeuristic
+    group.bench_function("N=10, SelectFirst", |b| {
+        let solver = SolverEngine::new(
+            Box::new(SelectFirstHeuristic),
+            Box::new(IdentityValueHeuristic),
+        );
+        b.iter(|| {
+            let (solution, _stats) = solver
+                .solve(
+                    black_box(&built_constraints),
+                    black_box(initial_solution.clone()),
+                )
+                .unwrap();
+            assert!(solution.is_some());
+        })
+    });
+
+    // Benchmark with MinRemainingValuesHeuristic
+    group.bench_function("N=10, MinRemainingValues", |b| {
+        let solver = SolverEngine::new(
+            Box::new(MinRemainingValuesHeuristic),
+            Box::new(IdentityValueHeuristic),
+        );
+        b.iter(|| {
+            let (solution, _stats) = solver
+                .solve(
+                    black_box(&built_constraints),
+                    black_box(initial_solution.clone()),
+                )
+                .unwrap();
+            assert!(solution.is_some());
+        })
+    });
+
+    group.finish();
+}
+
 fn n_queens_benchmark(c: &mut Criterion) {
-    let mut group = c.benchmark_group("N-Queens");
+    let mut group = c.benchmark_group("N-Queens Performance");
+
     for n in [8, 10, 12].iter() {
         group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
-            let (constraints, initial_solution) = n_queens_problem_setup(n);
-            let solver = SolverEngine::new();
+            let (built, initial_solution) = n_queens_problem_setup(n);
+            let solver = SolverEngine::new(
+                Box::new(SelectFirstHeuristic),
+                Box::new(IdentityValueHeuristic),
+            );
             b.iter(|| {
-                solver
-                    .solve(black_box(&constraints), black_box(initial_solution.clone()))
-                    .unwrap();
+                let result = solver.solve(black_box(&built), black_box(initial_solution.clone()));
+                assert!(result.is_ok());
+                let (solution, _stats) = result.unwrap();
+                assert!(solution.is_some());
             });
         });
     }
     group.finish();
 }
 
-criterion_group!(benches, n_queens_benchmark);
+criterion_group!(benches, n_queens_benchmark, n_queens_benchmarks);
 criterion_main!(benches);

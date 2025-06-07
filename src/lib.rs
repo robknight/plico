@@ -67,7 +67,11 @@
 //! let built = constraints.iter().map(|c| semantics.build_constraint(c)).collect::<Vec<_>>();
 //!
 //! // 4. Solve!
-//! let solver = SolverEngine::new();
+//! use plico::solver::heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic};
+//! let solver = SolverEngine::new(
+//!     Box::new(SelectFirstHeuristic),
+//!     Box::new(IdentityValueHeuristic),
+//! );
 //! let (solution, _stats) = solver.solve(&built, initial_solution).unwrap();
 //! let solution = solution.unwrap();
 //!

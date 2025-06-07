@@ -6,6 +6,7 @@ use crate::{
     error::Result,
     solver::{
         constraint::Constraint,
+        heuristics::{value::ValueOrderingHeuristic, variable::VariableSelectionHeuristic},
         semantics::DomainSemantics,
         solution::{HashSetDomain, Solution},
         work_list::WorkList,
@@ -30,12 +31,21 @@ pub struct SearchStats {
 ///
 /// It uses a combination of constraint propagation (the AC-3 algorithm) and
 /// backtracking search to explore the solution space.
-pub struct SolverEngine;
+pub struct SolverEngine<S: DomainSemantics> {
+    variable_heuristic: Box<dyn VariableSelectionHeuristic<S>>,
+    value_heuristic: Box<dyn ValueOrderingHeuristic<S>>,
+}
 
-impl SolverEngine {
-    /// Creates a new `SolverEngine`.
-    pub fn new() -> Self {
-        Self
+impl<S: DomainSemantics + std::fmt::Debug> SolverEngine<S> {
+    /// Creates a new `SolverEngine` with the specified heuristics.
+    pub fn new(
+        variable_heuristic: Box<dyn VariableSelectionHeuristic<S>>,
+        value_heuristic: Box<dyn ValueOrderingHeuristic<S>>,
+    ) -> Self {
+        Self {
+            variable_heuristic,
+            value_heuristic,
+        }
     }
 
     /// Attempts to solve the given constraint satisfaction problem.
@@ -54,10 +64,10 @@ impl SolverEngine {
     ///
     /// # Returns
     ///
-    /// * `Ok(Some(solution))` if a complete solution is found.
-    /// * `Ok(None)` if the problem is proven to be unsolvable.
+    /// * `Ok((Some(solution), stats))` if a complete solution is found.
+    /// * `Ok((None, stats))` if the problem is proven to be unsolvable.
     /// * `Err(error)` if an error occurs during the solving process.
-    pub fn solve<S: DomainSemantics + std::fmt::Debug>(
+    pub fn solve(
         &self,
         constraints: &[Box<dyn Constraint<S>>],
         initial_solution: Solution<S>,
@@ -76,32 +86,33 @@ impl SolverEngine {
         }
 
         // Otherwise, start the search.
-        let search_result = self.search(constraints, solution, &mut stats)?;
-        Ok((search_result, stats))
+        self.search(constraints, solution, stats)
     }
 
-    fn search<S: DomainSemantics + std::fmt::Debug>(
+    fn search(
         &self,
         constraints: &[Box<dyn Constraint<S>>],
         solution: Solution<S>,
-        stats: &mut SearchStats,
-    ) -> Result<Option<Solution<S>>> {
+        mut stats: SearchStats,
+    ) -> Result<(Option<Solution<S>>, SearchStats)> {
         stats.nodes_visited += 1;
+
         // Base case: If the solution is complete, we've found a valid assignment.
         if solution.is_complete() {
-            return Ok(Some(solution));
+            return Ok((Some(solution), stats));
         }
 
-        // Variable selection: Pick a variable to branch on.
-        let Some(var_to_branch) = solution.select_unassigned_variable() else {
+        // Variable selection: Pick a variable to branch on using the configured heuristic.
+        let Some(var_to_branch) = self.variable_heuristic.select_variable(&solution) else {
             // This should not be reached if `is_complete` is false, but we handle it.
-            return Ok(Some(solution));
+            return Ok((Some(solution), stats));
         };
 
         let domain = solution.domains.get(&var_to_branch).unwrap().clone();
 
-        // Value iteration: Try each value in the chosen variable's domain.
-        for value in domain.iter() {
+        // Value iteration: Try each value in the chosen variable's domain,
+        // using the order provided by the configured heuristic.
+        for value in self.value_heuristic.order_values(&domain) {
             // Create a new candidate solution with the variable assigned to the chosen value.
             let new_domain = Box::new(HashSetDomain::new(im::hashset! {value.clone()}));
             let new_domains = solution.domains.update(var_to_branch, new_domain);
@@ -112,25 +123,26 @@ impl SolverEngine {
 
             // Propagate constraints with the new assignment.
             if let Some(propagated_solution) =
-                self.arc_consistency(constraints, guess_solution, stats)?
+                self.arc_consistency(constraints, guess_solution, &mut stats)?
             {
                 // If propagation succeeded, recurse.
-                if let Some(found_solution) =
-                    self.search(constraints, propagated_solution, stats)?
-                {
-                    return Ok(Some(found_solution));
+                let (found_solution, new_stats) =
+                    self.search(constraints, propagated_solution, stats)?;
+                stats = new_stats;
+                if found_solution.is_some() {
+                    return Ok((found_solution, stats));
                 }
             }
             // If arc_consistency returned None, it's a contradiction, so we backtrack.
+            stats.backtracks += 1;
         }
 
         // If we've tried all values for this variable and found no solution, this path is a dead end.
-        stats.backtracks += 1;
-        Ok(None)
+        Ok((None, stats))
     }
 
     /// Establishes arc-consistency using the AC-3 algorithm.
-    pub fn arc_consistency<S: DomainSemantics + std::fmt::Debug>(
+    pub fn arc_consistency(
         &self,
         constraints: &[Box<dyn Constraint<S>>],
         initial_solution: Solution<S>,
@@ -188,16 +200,6 @@ impl SolverEngine {
         debug!("Solver loop finished successfully");
 
         // If we reach here, the solution is arc-consistent.
-        // Now, we need to perform a search to find a concrete solution.
-        // (This part is not yet implemented)
-
-        // For now, return the pruned domains.
         Ok(Some(solution))
-    }
-}
-
-impl Default for SolverEngine {
-    fn default() -> Self {
-        Self::new()
     }
 }

@@ -8,6 +8,7 @@ use plico::solver::{
         all_different::AllDifferentConstraint,
     },
     engine::{SolverEngine, VariableId},
+    heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
     semantics::DomainSemantics,
     solution::{DomainRepresentation, HashSetDomain, Solution},
     value::{StandardValue, ValueArithmetic},
@@ -127,14 +128,16 @@ fn main() {
         .map(|c| semantics.build_constraint(c))
         .collect::<Vec<_>>();
 
-    // 5. Solve
-    println!("Solving N-Queens for N={}", n);
-    let solver = SolverEngine::new();
+    // 4. Solve the problem
+    let solver = SolverEngine::new(
+        Box::new(SelectFirstHeuristic),
+        Box::new(IdentityValueHeuristic),
+    );
     let (solution, stats) = solver.solve(&built_constraints, initial_solution).unwrap();
 
     println!("\nSearch statistics:\n{:#?}", stats);
 
-    // 6. Print solution
+    // 5. Print solution
     if let Some(sol) = solution {
         println!("\nFound a solution:");
         let mut board = vec![vec!['.'; n]; n];

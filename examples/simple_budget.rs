@@ -5,6 +5,7 @@ use plico::solver::{
     constraint::Constraint,
     constraints::sum_of::SumOfConstraint,
     engine::{SolverEngine, VariableId},
+    heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
     semantics::DomainSemantics,
     solution::{Domain, RangeDomain, Solution},
     value::{StandardValue, ValueArithmetic, ValueRange},
@@ -162,7 +163,10 @@ fn main() {
     println!("--- Initial Domains ---");
     print_domains(&initial_solution);
 
-    let solver = SolverEngine::new();
+    let solver = SolverEngine::new(
+        Box::new(SelectFirstHeuristic),
+        Box::new(IdentityValueHeuristic),
+    );
     // We only run arc_consistency, not the full search, to see the pruning.
     let mut stats = plico::solver::engine::SearchStats::default();
     let arc_consistent_solution = solver
@@ -286,7 +290,10 @@ fn test_budget_arc_consistency() {
         .collect::<Vec<_>>();
 
     // 2. Run arc-consistency to prune domains
-    let solver = SolverEngine::new();
+    let solver = SolverEngine::new(
+        Box::new(SelectFirstHeuristic),
+        Box::new(IdentityValueHeuristic),
+    );
     let mut stats = plico::solver::engine::SearchStats::default();
     let solution = solver
         .arc_consistency(&built, initial_solution, &mut stats)

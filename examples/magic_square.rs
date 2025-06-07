@@ -5,6 +5,7 @@ use plico::solver::{
     constraint::Constraint,
     constraints::{all_different::AllDifferentConstraint, sum_of::SumOfConstraint},
     engine::{SolverEngine, VariableId},
+    heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
     semantics::DomainSemantics,
     solution::{Domain, OrderedDomain, Solution},
     value::{StandardValue, ValueArithmetic},
@@ -127,7 +128,10 @@ fn main() {
 
     // 4. Solve!
     println!("Solving Magic Square...");
-    let solver = SolverEngine::new();
+    let solver = SolverEngine::new(
+        Box::new(SelectFirstHeuristic),
+        Box::new(IdentityValueHeuristic),
+    );
     let (solution, stats) = solver.solve(&built, initial_solution).unwrap();
     let solution = solution.unwrap();
 
@@ -224,7 +228,10 @@ fn test_solve_magic_square() {
         .collect::<Vec<_>>();
 
     // Solve!
-    let solver = SolverEngine::new();
+    let solver = SolverEngine::new(
+        Box::new(SelectFirstHeuristic),
+        Box::new(IdentityValueHeuristic),
+    );
     let (solution, _stats) = solver.solve(&built, initial_solution).unwrap();
     let solution = solution.unwrap();
 

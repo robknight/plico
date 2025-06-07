@@ -5,6 +5,7 @@ use plico::solver::{
     constraint::Constraint,
     constraints::{equal::EqualConstraint, not_equal::NotEqualConstraint},
     engine::{SolverEngine, VariableId},
+    heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
     semantics::DomainSemantics,
     solution::{DomainRepresentation, HashSetDomain, Solution},
     value::StandardValue,
@@ -95,7 +96,10 @@ pub fn main() {
         .map(|c| semantics.build_constraint(c))
         .collect();
 
-    let solver = SolverEngine::new();
+    let solver = SolverEngine::new(
+        Box::new(SelectFirstHeuristic),
+        Box::new(IdentityValueHeuristic),
+    );
     let result = solver.solve(&built_constraints, initial_solution);
 
     match result {
@@ -133,7 +137,10 @@ mod tests {
             .map(|c| semantics.build_constraint(c))
             .collect();
 
-        let solver = SolverEngine::new();
+        let solver = SolverEngine::new(
+            Box::new(SelectFirstHeuristic),
+            Box::new(IdentityValueHeuristic),
+        );
         let result = solver.solve(&built_constraints, initial_solution);
 
         assert!(result.is_ok());
@@ -231,7 +238,10 @@ mod tests {
                     .map(|c| semantics.build_constraint(c))
                     .collect();
 
-                let solver = SolverEngine::new();
+                let solver = SolverEngine::new(
+                    Box::new(SelectFirstHeuristic),
+                    Box::new(IdentityValueHeuristic),
+                );
                 let result = solver.solve(&built_constraints, initial_solution);
 
                 assert!(result.is_ok());

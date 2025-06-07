@@ -5,6 +5,7 @@ use plico::solver::{
     constraint::Constraint,
     constraints::all_different::AllDifferentConstraint,
     engine::{SearchStats, SolverEngine},
+    heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
     semantics::DomainSemantics,
     solution::{DomainRepresentation, HashSetDomain, Solution},
     value::StandardValue,
@@ -103,7 +104,10 @@ pub fn solve_hardcoded_puzzle() -> (
         .map(|c| semantics.build_constraint(c))
         .collect();
 
-    let solver = SolverEngine::new();
+    let solver = SolverEngine::new(
+        Box::new(SelectFirstHeuristic),
+        Box::new(IdentityValueHeuristic),
+    );
     let (solution, stats) = solver.solve(&built_constraints, initial_solution).unwrap();
     (solution, stats, variables)
 }
@@ -155,6 +159,7 @@ mod tests {
     use plico::solver::{
         constraints::all_different::AllDifferentConstraint,
         engine::{SearchStats, SolverEngine},
+        heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
         semantics::DomainSemantics,
         solution::{DomainRepresentation, HashSetDomain, Solution},
         value::StandardValue,
@@ -255,7 +260,10 @@ mod tests {
             .map(|c| semantics.build_constraint(c))
             .collect();
 
-        let solver = SolverEngine::new();
+        let solver = SolverEngine::new(
+            Box::new(SelectFirstHeuristic),
+            Box::new(IdentityValueHeuristic),
+        );
         let (solution, _stats) = solver.solve(&built_constraints, initial_solution).unwrap();
         assert!(solution.is_none());
     }
@@ -299,7 +307,10 @@ mod tests {
             .collect();
 
         // 2. Execution
-        let solver = plico::solver::engine::SolverEngine::new();
+        let solver = SolverEngine::new(
+            Box::new(SelectFirstHeuristic),
+            Box::new(IdentityValueHeuristic),
+        );
         let result = solver.solve(&built_constraints, solution);
 
         // 3. Verification
@@ -330,6 +341,7 @@ mod prop_tests {
     use plico::solver::{
         constraints::all_different::AllDifferentConstraint,
         engine::SolverEngine,
+        heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
         semantics::DomainSemantics,
         solution::{DomainRepresentation, HashSetDomain, Solution},
         value::StandardValue,
@@ -525,7 +537,10 @@ mod prop_tests {
                 .map(|c| semantics.build_constraint(c))
                 .collect();
 
-            let solver = SolverEngine::new();
+            let solver = SolverEngine::new(
+                Box::new(SelectFirstHeuristic),
+                Box::new(IdentityValueHeuristic),
+            );
             let result = solver.solve(&built_constraints, solution);
 
             assert!(result.is_ok());

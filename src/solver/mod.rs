@@ -1,6 +1,7 @@
 pub mod constraint;
 pub mod constraints;
 pub mod engine;
+pub mod heuristics;
 pub mod semantics;
 pub mod solution;
 pub mod value;

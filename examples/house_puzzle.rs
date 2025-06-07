@@ -8,6 +8,7 @@ use plico::solver::{
         not_equal::NotEqualConstraint, reified_equal::ReifiedEqualConstraint,
     },
     engine::{SearchStats, SolverEngine, VariableId},
+    heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
     semantics::DomainSemantics,
     solution::{DomainRepresentation, HashSetDomain, Solution},
     value::StandardValue,
@@ -179,7 +180,10 @@ fn solve_puzzle() -> (Option<Solution<HouseSemantics>>, SearchStats) {
         .map(|c| semantics.build_constraint(c))
         .collect();
 
-    let solver = SolverEngine::new();
+    let solver = SolverEngine::new(
+        Box::new(SelectFirstHeuristic),
+        Box::new(IdentityValueHeuristic),
+    );
     solver.solve(&built_constraints, initial_solution).unwrap()
 }
 
