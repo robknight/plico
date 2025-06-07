@@ -14,9 +14,4 @@ pub trait DomainSemantics: 'static {
         &self,
         definition: &Self::ConstraintDefinition,
     ) -> Box<dyn Constraint<Self>>;
-
-    /// Defines the integer IDs for value "kinds".
-    const NUMERIC_KIND_ID: u8;
-    const POD_ID_KIND_ID: u8;
-    const KEY_KIND_ID: u8;
 }

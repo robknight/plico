@@ -61,6 +61,8 @@ pub trait DomainRepresentation<V: ValueEquality>: 'static {
     fn retain(&self, f: &dyn Fn(&V) -> bool) -> Box<dyn DomainRepresentation<V>>;
 
     fn clone_box(&self) -> Box<dyn DomainRepresentation<V>>;
+
+    fn intersect(&self, other: &dyn DomainRepresentation<V>) -> Box<dyn DomainRepresentation<V>>;
 }
 
 // A concrete implementation using a simple hash set
@@ -97,6 +99,11 @@ impl<V: ValueEquality> DomainRepresentation<V> for HashSetDomain<V> {
     fn clone_box(&self) -> Box<dyn DomainRepresentation<V>> {
         Box::new(self.clone())
     }
+    fn intersect(&self, other: &dyn DomainRepresentation<V>) -> Box<dyn DomainRepresentation<V>> {
+        let other_values: im::HashSet<V> = other.iter().cloned().collect();
+        let new_inner = self.0.clone().intersection(other_values);
+        Box::new(Self(new_inner))
+    }
 }
 
 // A concrete implementation for ordered domains
@@ -132,6 +139,16 @@ impl<V: ValueOrdering> DomainRepresentation<V> for OrderedDomain<V> {
     }
     fn clone_box(&self) -> Box<dyn DomainRepresentation<V>> {
         Box::new(self.clone())
+    }
+    fn intersect(&self, other: &dyn DomainRepresentation<V>) -> Box<dyn DomainRepresentation<V>> {
+        let other_values: im::HashSet<V> = other.iter().cloned().collect();
+        let new_inner = self
+            .0
+            .iter()
+            .filter(|v| other_values.contains(v))
+            .cloned()
+            .collect();
+        Box::new(Self(new_inner))
     }
 }
 
