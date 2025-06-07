@@ -4,10 +4,14 @@ use crate::{
     error::Result,
     solver::{
         constraint::Constraint, engine::VariableId, semantics::DomainSemantics,
-        solution::CandidateSolution,
+        solution::Solution,
     },
 };
 
+/// A constraint that ensures all variables in a given set have unique values.
+///
+/// This is a common constraint in problems like Sudoku, where every cell in a
+/// row, column, or box must contain a different number.
 #[derive(Debug, Clone)]
 pub struct AllDifferentConstraint<S: DomainSemantics + std::fmt::Debug> {
     pub vars: Vec<VariableId>,
@@ -31,8 +35,8 @@ impl<S: DomainSemantics + std::fmt::Debug> Constraint<S> for AllDifferentConstra
     fn revise(
         &self,
         target_var: &VariableId,
-        solution: &CandidateSolution<S>,
-    ) -> Result<Option<CandidateSolution<S>>> {
+        solution: &Solution<S>,
+    ) -> Result<Option<Solution<S>>> {
         // Find all values that are already fixed in other variables in this group.
         let mut fixed_values_to_remove = HashSet::new();
         for var in &self.vars {
@@ -58,7 +62,7 @@ impl<S: DomainSemantics + std::fmt::Debug> Constraint<S> for AllDifferentConstra
             let changed = new_domain.len() < original_size;
             if changed {
                 let new_domains = solution.domains.update(*target_var, new_domain);
-                let new_solution = CandidateSolution {
+                let new_solution = Solution {
                     domains: new_domains,
                     semantics: solution.semantics.clone(),
                 };

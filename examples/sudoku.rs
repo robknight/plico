@@ -1,6 +1,13 @@
-use crate::solver::{
-    constraint::Constraint, constraints::all_different::AllDifferentConstraint,
-    semantics::DomainSemantics, value::StandardValue,
+use std::sync::Arc;
+
+use im::HashMap;
+use plico::solver::{
+    constraint::Constraint,
+    constraints::all_different::AllDifferentConstraint,
+    engine::SolverEngine,
+    semantics::DomainSemantics,
+    solution::{DomainRepresentation, HashSetDomain, Solution},
+    value::StandardValue,
 };
 
 #[derive(Debug)]
@@ -23,99 +30,142 @@ impl DomainSemantics for SudokuSemantics {
     }
 }
 
+/// Solves a hardcoded Sudoku puzzle and returns the solution and variable map.
+pub fn solve_hardcoded_puzzle() -> (Option<Solution<SudokuSemantics>>, Vec<Vec<u32>>) {
+    let puzzle = [
+        [5, 3, 0, 0, 7, 0, 0, 0, 0],
+        [6, 0, 0, 1, 9, 5, 0, 0, 0],
+        [0, 9, 8, 0, 0, 0, 0, 6, 0],
+        [8, 0, 0, 0, 6, 0, 0, 0, 3],
+        [4, 0, 0, 8, 0, 3, 0, 0, 1],
+        [7, 0, 0, 0, 2, 0, 0, 0, 6],
+        [0, 6, 0, 0, 0, 0, 2, 8, 0],
+        [0, 0, 0, 4, 1, 9, 0, 0, 5],
+        [0, 0, 0, 0, 8, 0, 0, 7, 9],
+    ];
+
+    let variables: Vec<Vec<_>> = (0..9)
+        .map(|row| (0..9).map(|col| (row * 9 + col) as u32).collect())
+        .collect();
+
+    let mut domains = HashMap::new();
+    for r in 0..9 {
+        for c in 0..9 {
+            let var_id = variables[r][c];
+            let value = puzzle[r][c];
+            let domain_values = if value == 0 {
+                (1..=9)
+                    .map(|v| SudokuValue::Std(StandardValue::Int(v)))
+                    .collect()
+            } else {
+                [SudokuValue::Std(StandardValue::Int(value))]
+                    .iter()
+                    .cloned()
+                    .collect()
+            };
+            let domain: Box<dyn DomainRepresentation<SudokuValue>> =
+                Box::new(HashSetDomain::new(domain_values));
+            domains.insert(var_id, domain);
+        }
+    }
+
+    let semantics = Arc::new(SudokuSemantics);
+    let initial_solution = Solution {
+        domains,
+        semantics: semantics.clone(),
+    };
+
+    let mut constraints = Vec::new();
+    for row in &variables {
+        constraints.push(AllDifferentConstraint::new(row.clone()));
+    }
+    for c in 0..9 {
+        let col_vars = (0..9).map(|r| variables[r][c]).collect();
+        constraints.push(AllDifferentConstraint::new(col_vars));
+    }
+    for br in 0..3 {
+        for bc in 0..3 {
+            let box_vars = variables[(br * 3)..(br * 3 + 3)]
+                .iter()
+                .flat_map(|row| &row[(bc * 3)..(bc * 3 + 3)])
+                .cloned()
+                .collect();
+            constraints.push(AllDifferentConstraint::new(box_vars));
+        }
+    }
+
+    let built_constraints: Vec<_> = constraints
+        .iter()
+        .map(|c| semantics.build_constraint(c))
+        .collect();
+
+    let solver = SolverEngine::new();
+    (
+        solver.solve(&built_constraints, initial_solution).unwrap(),
+        variables,
+    )
+}
+
+fn print_grid(solution: &Solution<SudokuSemantics>, variables: &[Vec<u32>]) {
+    for r in 0..9 {
+        if r % 3 == 0 && r != 0 {
+            println!("- - - + - - - + - - -");
+        }
+        for c in 0..9 {
+            if c % 3 == 0 && c != 0 {
+                print!("| ");
+            }
+            let var_id = variables[r][c];
+            let value = solution
+                .domains
+                .get(&var_id)
+                .unwrap()
+                .get_singleton_value()
+                .map(|v| match v {
+                    SudokuValue::Std(StandardValue::Int(i)) => i.to_string(),
+                    _ => ".".to_string(),
+                })
+                .unwrap_or_else(|| ".".to_string());
+            print!("{} ", value);
+        }
+        println!();
+    }
+}
+
+pub fn main() {
+    tracing_subscriber::fmt::init();
+    println!("Solving hardcoded Sudoku puzzle...");
+    let (maybe_solution, variables) = solve_hardcoded_puzzle();
+    if let Some(solution) = maybe_solution {
+        println!("Solution found!");
+        print_grid(&solution, &variables);
+    } else {
+        println!("No solution found for the hardcoded puzzle.");
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::solver::value::StandardValue;
-    use pretty_assertions::assert_eq;
     use std::sync::Arc;
 
     use im::HashMap;
-
-    use crate::solver::{
+    use plico::solver::{
+        constraints::all_different::AllDifferentConstraint,
         engine::SolverEngine,
         semantics::DomainSemantics,
-        solution::{CandidateSolution, DomainRepresentation, HashSetDomain},
+        solution::{DomainRepresentation, HashSetDomain, Solution},
+        value::StandardValue,
     };
+    use pretty_assertions::assert_eq;
 
-    use super::{prop_tests, SudokuSemantics, SudokuValue};
-    use crate::solver::constraints::all_different::AllDifferentConstraint;
+    use super::{prop_tests, solve_hardcoded_puzzle, SudokuSemantics, SudokuValue};
 
     #[test]
     fn test_sudoku_solver() {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let puzzle = [
-            [5, 3, 0, 0, 7, 0, 0, 0, 0],
-            [6, 0, 0, 1, 9, 5, 0, 0, 0],
-            [0, 9, 8, 0, 0, 0, 0, 6, 0],
-            [8, 0, 0, 0, 6, 0, 0, 0, 3],
-            [4, 0, 0, 8, 0, 3, 0, 0, 1],
-            [7, 0, 0, 0, 2, 0, 0, 0, 6],
-            [0, 6, 0, 0, 0, 0, 2, 8, 0],
-            [0, 0, 0, 4, 1, 9, 0, 0, 5],
-            [0, 0, 0, 0, 8, 0, 0, 7, 9],
-        ];
-
-        let variables: Vec<Vec<_>> = (0..9)
-            .map(|row| (0..9).map(|col| (row * 9 + col) as u32).collect())
-            .collect();
-
-        let mut domains = HashMap::new();
-        for r in 0..9 {
-            for c in 0..9 {
-                let var_id = variables[r][c];
-                let value = puzzle[r][c];
-                let domain_values = if value == 0 {
-                    (1..=9)
-                        .map(|v| SudokuValue::Std(StandardValue::Int(v)))
-                        .collect()
-                } else {
-                    [SudokuValue::Std(StandardValue::Int(value))]
-                        .iter()
-                        .cloned()
-                        .collect()
-                };
-                let domain: Box<dyn DomainRepresentation<SudokuValue>> =
-                    Box::new(HashSetDomain::new(domain_values));
-                domains.insert(var_id, domain);
-            }
-        }
-
-        let semantics = Arc::new(SudokuSemantics);
-        let initial_solution = CandidateSolution {
-            domains,
-            semantics: semantics.clone(),
-        };
-
-        let mut constraints = Vec::new();
-        for row in &variables {
-            constraints.push(AllDifferentConstraint::new(row.clone()));
-        }
-        for c in 0..9 {
-            let col_vars = (0..9).map(|r| variables[r][c]).collect();
-            constraints.push(AllDifferentConstraint::new(col_vars));
-        }
-        for br in 0..3 {
-            for bc in 0..3 {
-                let box_vars = variables[(br * 3)..(br * 3 + 3)]
-                    .iter()
-                    .flat_map(|row| &row[(bc * 3)..(bc * 3 + 3)])
-                    .cloned()
-                    .collect();
-                constraints.push(AllDifferentConstraint::new(box_vars));
-            }
-        }
-
-        let built_constraints: Vec<_> = constraints
-            .iter()
-            .map(|c| semantics.build_constraint(c))
-            .collect();
-
-        let solver = SolverEngine::new();
-        let result = solver.solve(&built_constraints, initial_solution);
-
-        assert!(result.is_ok());
-        let solution = result.unwrap().unwrap();
+        let (solution, variables) = solve_hardcoded_puzzle();
+        let solution = solution.unwrap();
 
         let cell_0_2 = solution.domains.get(&variables[0][2]).unwrap();
         assert!(cell_0_2.is_singleton());
@@ -173,7 +223,7 @@ mod tests {
         }
 
         let semantics = Arc::new(SudokuSemantics);
-        let initial_solution = CandidateSolution {
+        let initial_solution = Solution {
             domains,
             semantics: semantics.clone(),
         };
@@ -252,7 +302,7 @@ mod tests {
             .collect();
 
         // 2. Execution
-        let solver = crate::solver::engine::SolverEngine::new();
+        let solver = plico::solver::engine::SolverEngine::new();
         let result = solver.solve(&built_constraints, solution);
 
         // 3. Verification
@@ -277,22 +327,24 @@ mod tests {
 
 #[cfg(test)]
 mod prop_tests {
-    use super::{SudokuSemantics, SudokuValue};
-    use crate::solver::{
+    use std::sync::Arc;
+
+    use im::HashMap;
+    use plico::solver::{
         constraints::all_different::AllDifferentConstraint,
         engine::SolverEngine,
         semantics::DomainSemantics,
-        solution::{CandidateSolution, DomainRepresentation, HashSetDomain},
+        solution::{DomainRepresentation, HashSetDomain, Solution},
         value::StandardValue,
     };
-    use im::HashMap;
     use proptest::{
         prelude::*,
         strategy::{Just, NewTree, Strategy},
         test_runner::TestRunner,
     };
-    use std::sync::Arc;
     use sudoku::Sudoku;
+
+    use super::{SudokuSemantics, SudokuValue};
 
     pub type Grid = [[i64; 9]; 9];
 
@@ -347,7 +399,7 @@ mod prop_tests {
         SudokuGenerationStrategy
     }
 
-    pub fn grid_to_solution(grid: &Grid) -> (CandidateSolution<SudokuSemantics>, Vec<Vec<u32>>) {
+    pub fn grid_to_solution(grid: &Grid) -> (Solution<SudokuSemantics>, Vec<Vec<u32>>) {
         let variables: Vec<Vec<_>> = (0..9)
             .map(|row| (0..9).map(|col| (row * 9 + col) as u32).collect())
             .collect();
@@ -374,15 +426,12 @@ mod prop_tests {
         }
 
         let semantics = Arc::new(SudokuSemantics);
-        let initial_solution = CandidateSolution { domains, semantics };
+        let initial_solution = Solution { domains, semantics };
 
         (initial_solution, variables)
     }
 
-    pub fn solution_to_grid(
-        solution: &CandidateSolution<SudokuSemantics>,
-        variables: &[Vec<u32>],
-    ) -> Grid {
+    pub fn solution_to_grid(solution: &Solution<SudokuSemantics>, variables: &[Vec<u32>]) -> Grid {
         let mut grid = [[0; 9]; 9];
         for r in 0..9 {
             for c in 0..9 {

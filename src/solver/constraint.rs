@@ -1,6 +1,6 @@
 use crate::{
     error::Result,
-    solver::{engine::VariableId, semantics::DomainSemantics, solution::CandidateSolution},
+    solver::{engine::VariableId, semantics::DomainSemantics, solution::Solution},
 };
 
 pub trait Constraint<S: DomainSemantics>: std::fmt::Debug {
@@ -9,7 +9,7 @@ pub trait Constraint<S: DomainSemantics>: std::fmt::Debug {
     fn revise(
         &self,
         target_var: &VariableId,
-        solution: &CandidateSolution<S>,
-    ) -> Result<Option<CandidateSolution<S>>>;
+        solution: &Solution<S>,
+    ) -> Result<Option<Solution<S>>>;
     // ...
 }

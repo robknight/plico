@@ -2,6 +2,12 @@
 name = "plico"
 version = "0.1.0"
 edition = "2021"
+description = "A generic, modular constraint satisfaction problem (CSP) solver."
+license = "Apache-2.0"
+repository = "https://github.com/robknight/plico"
+readme = "README.md"
+keywords = ["constraint", "solver", "csp", "logic", "puzzle"]
+categories = ["algorithms"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

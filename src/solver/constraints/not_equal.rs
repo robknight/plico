@@ -1,22 +1,29 @@
+use std::marker::PhantomData;
+
 use crate::{
     error::Result,
     solver::{
         constraint::Constraint, engine::VariableId, semantics::DomainSemantics,
-        solution::CandidateSolution,
+        solution::Solution,
     },
 };
 
+/// A constraint that enforces inequality between two variables (`A != B`).
+///
+/// This constraint will prune a value from a variable's domain if the other
+/// variable's domain has been reduced to a singleton containing that value.
 #[derive(Debug, Clone)]
-pub struct NotEqualConstraint<S: DomainSemantics + std::fmt::Debug> {
+pub struct NotEqualConstraint<S: DomainSemantics> {
+    /// The variables that must not be equal.
     pub vars: [VariableId; 2],
-    _phantom: std::marker::PhantomData<S>,
+    _semantics: PhantomData<S>,
 }
 
-impl<S: DomainSemantics + std::fmt::Debug> NotEqualConstraint<S> {
+impl<S: DomainSemantics> NotEqualConstraint<S> {
     pub fn new(a: VariableId, b: VariableId) -> Self {
         Self {
             vars: [a, b],
-            _phantom: std::marker::PhantomData,
+            _semantics: PhantomData,
         }
     }
 }
@@ -29,8 +36,8 @@ impl<S: DomainSemantics + std::fmt::Debug> Constraint<S> for NotEqualConstraint<
     fn revise(
         &self,
         target_var: &VariableId,
-        solution: &CandidateSolution<S>,
-    ) -> Result<Option<CandidateSolution<S>>> {
+        solution: &Solution<S>,
+    ) -> Result<Option<Solution<S>>> {
         let other_var = if *target_var == self.vars[0] {
             self.vars[1]
         } else {
@@ -54,7 +61,7 @@ impl<S: DomainSemantics + std::fmt::Debug> Constraint<S> for NotEqualConstraint<
 
         if new_domain.len() < original_size {
             let new_domains = solution.domains.update(*target_var, new_domain);
-            let new_solution = CandidateSolution {
+            let new_solution = Solution {
                 domains: new_domains,
                 semantics: solution.semantics.clone(),
             };

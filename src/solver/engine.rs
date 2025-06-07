@@ -2,29 +2,59 @@ use std::collections::HashMap;
 
 use tracing::debug;
 
-use crate::error::Result;
-use crate::solver::solution::HashSetDomain;
-
-use super::{
-    constraint::Constraint, semantics::DomainSemantics, solution::CandidateSolution,
-    work_list::WorkList,
+use crate::{
+    error::Result,
+    solver::{
+        constraint::Constraint,
+        semantics::DomainSemantics,
+        solution::{HashSetDomain, Solution},
+        work_list::WorkList,
+    },
 };
 
 pub type VariableId = u32;
 pub type ConstraintId = usize;
 
+/// The main engine for solving constraint satisfaction problems.
+///
+/// The `SolverEngine` is responsible for taking a problem definition—a set of
+/// variables, their domains, and a list of constraints—and finding a solution
+/// that satisfies all constraints.
+///
+/// It uses a combination of constraint propagation (the AC-3 algorithm) and
+/// backtracking search to explore the solution space.
 pub struct SolverEngine;
 
 impl SolverEngine {
+    /// Creates a new `SolverEngine`.
     pub fn new() -> Self {
         Self
     }
 
+    /// Attempts to solve the given constraint satisfaction problem.
+    ///
+    /// This method first applies constraint propagation to achieve arc consistency,
+    /// which prunes the domains of variables. If the problem is not solved by
+    /// propagation alone, it proceeds with a backtracking search to find a
+    /// complete assignment.
+    ///
+    /// # Arguments
+    ///
+    /// * `constraints`: A slice of boxed [`Constraint`] trait objects that define the
+    ///   rules of the problem.
+    /// * `initial_solution`: A [`Solution`] representing the initial state
+    ///   of the problem, including the initial domains for all variables.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(solution))` if a complete solution is found.
+    /// * `Ok(None)` if the problem is proven to be unsolvable.
+    /// * `Err(error)` if an error occurs during the solving process.
     pub fn solve<S: DomainSemantics + std::fmt::Debug>(
         &self,
         constraints: &[Box<dyn Constraint<S>>],
-        initial_solution: CandidateSolution<S>,
-    ) -> Result<Option<CandidateSolution<S>>> {
+        initial_solution: Solution<S>,
+    ) -> Result<Option<Solution<S>>> {
         // First, run the propagation loop to establish arc consistency.
         let arc_consistent_solution = self.arc_consistency(constraints, initial_solution)?;
 
@@ -43,8 +73,8 @@ impl SolverEngine {
     fn search<S: DomainSemantics + std::fmt::Debug>(
         &self,
         constraints: &[Box<dyn Constraint<S>>],
-        solution: CandidateSolution<S>,
-    ) -> Result<Option<CandidateSolution<S>>> {
+        solution: Solution<S>,
+    ) -> Result<Option<Solution<S>>> {
         // Base case: If the solution is complete, we've found a valid assignment.
         if solution.is_complete() {
             return Ok(Some(solution));
@@ -63,7 +93,7 @@ impl SolverEngine {
             // Create a new candidate solution with the variable assigned to the chosen value.
             let new_domain = Box::new(HashSetDomain::new(im::hashset! {value.clone()}));
             let new_domains = solution.domains.update(var_to_branch, new_domain);
-            let guess_solution = CandidateSolution {
+            let guess_solution = Solution {
                 domains: new_domains,
                 semantics: solution.semantics.clone(),
             };
@@ -86,8 +116,8 @@ impl SolverEngine {
     fn arc_consistency<S: DomainSemantics + std::fmt::Debug>(
         &self,
         constraints: &[Box<dyn Constraint<S>>],
-        initial_solution: CandidateSolution<S>,
-    ) -> Result<Option<CandidateSolution<S>>> {
+        initial_solution: Solution<S>,
+    ) -> Result<Option<Solution<S>>> {
         let mut solution = initial_solution;
 
         // Build the dependency graph.

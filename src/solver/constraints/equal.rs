@@ -1,11 +1,18 @@
+use std::marker::PhantomData;
+
 use crate::{
     error::Result,
     solver::{
         constraint::Constraint, engine::VariableId, semantics::DomainSemantics,
-        solution::CandidateSolution,
+        solution::Solution,
     },
 };
 
+/// A constraint that enforces equality between two variables (`A == B`).
+///
+/// When this constraint is revised, it ensures that the domain of the target
+/// variable is pruned to the intersection of its own domain and the other
+/// variable's domain.
 #[derive(Debug, Clone)]
 pub struct EqualConstraint<S: DomainSemantics + std::fmt::Debug> {
     vars: [VariableId; 2],
@@ -16,7 +23,7 @@ impl<S: DomainSemantics + std::fmt::Debug> EqualConstraint<S> {
     pub fn new(a: VariableId, b: VariableId) -> Self {
         Self {
             vars: [a, b],
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -29,8 +36,8 @@ impl<S: DomainSemantics + std::fmt::Debug> Constraint<S> for EqualConstraint<S> 
     fn revise(
         &self,
         target_var: &VariableId,
-        solution: &CandidateSolution<S>,
-    ) -> Result<Option<CandidateSolution<S>>> {
+        solution: &Solution<S>,
+    ) -> Result<Option<Solution<S>>> {
         let other_var = if *target_var == self.vars[0] {
             self.vars[1]
         } else {
@@ -46,7 +53,7 @@ impl<S: DomainSemantics + std::fmt::Debug> Constraint<S> for EqualConstraint<S> 
 
         if changed {
             let new_domains = solution.domains.update(*target_var, new_domain);
-            let new_solution = CandidateSolution {
+            let new_solution = Solution {
                 domains: new_domains,
                 semantics: solution.semantics.clone(),
             };
