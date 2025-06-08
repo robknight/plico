@@ -93,7 +93,7 @@ impl<S: DomainSemantics + std::fmt::Debug> SolverEngine<S> {
         let mut worklist = WorkList::new();
         for (constraint_id, constraint) in constraints.iter().enumerate() {
             for var_id in constraint.variables() {
-                worklist.push_back(*var_id, constraint_id);
+                worklist.push_back(constraint.priority(), *var_id, constraint_id);
             }
         }
 
@@ -123,7 +123,11 @@ impl<S: DomainSemantics + std::fmt::Debug> SolverEngine<S> {
                         for &dep_constraint_id in dependent_constraints {
                             for &neighbor_var in constraints[dep_constraint_id].variables() {
                                 if neighbor_var != target_var {
-                                    worklist.push_back(neighbor_var, dep_constraint_id);
+                                    worklist.push_back(
+                                        constraint.priority(),
+                                        neighbor_var,
+                                        dep_constraint_id,
+                                    );
                                 }
                             }
                         }
