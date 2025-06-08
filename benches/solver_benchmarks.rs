@@ -1,26 +1,23 @@
 use std::sync::Arc;
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use im::HashMap;
-use plico::{
-    error::Result,
-    solver::{
-        constraint::Constraint,
-        constraints::{
-            abs_diff_not_equal::AbsoluteDifferenceNotEqualConstraint,
-            all_different::AllDifferentConstraint, equal::EqualConstraint,
-            reified_and::ReifiedAndConstraint, reified_member_of::ReifiedMemberOfConstraint,
-            reified_or::ReifiedOrConstraint,
-        },
-        engine::{SolverEngine, VariableId},
-        heuristics::{
-            value::IdentityValueHeuristic,
-            variable::{MinRemainingValuesHeuristic, SelectFirstHeuristic},
-        },
-        semantics::DomainSemantics,
-        solution::{DomainRepresentation, HashSetDomain, Solution},
-        value::{StandardValue, ValueArithmetic},
+use plico::solver::{
+    constraint::Constraint,
+    constraints::{
+        abs_diff_not_equal::AbsoluteDifferenceNotEqualConstraint,
+        all_different::AllDifferentConstraint, equal::EqualConstraint,
+        reified_and::ReifiedAndConstraint, reified_member_of::ReifiedMemberOfConstraint,
+        reified_or::ReifiedOrConstraint,
     },
+    engine::{SolverEngine, VariableId},
+    heuristics::{
+        value::IdentityValueHeuristic,
+        variable::{MinimumRemainingValuesHeuristic, SelectFirstHeuristic},
+    },
+    semantics::DomainSemantics,
+    solution::{DomainRepresentation, HashSetDomain, Solution},
+    value::{StandardValue, ValueArithmetic},
 };
 use rand::prelude::*;
 
@@ -137,7 +134,7 @@ fn n_queens_benchmarks(c: &mut Criterion) {
 
     group.bench_function("N=10, MinRemainingValues", |b| {
         let solver = SolverEngine::new(
-            Box::new(MinRemainingValuesHeuristic),
+            Box::new(MinimumRemainingValuesHeuristic),
             Box::new(IdentityValueHeuristic),
         );
         b.iter(|| {

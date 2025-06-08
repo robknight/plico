@@ -11,13 +11,17 @@ use plico::{
             reified_member_of::ReifiedMemberOfConstraint, reified_or::ReifiedOrConstraint,
         },
         engine::{SolverEngine, VariableId},
-        heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
+        heuristics::{
+            value::DeterministicIdentityValueHeuristic, variable::MinimumRemainingValuesHeuristic,
+        },
         semantics::DomainSemantics,
         solution::{DomainRepresentation, HashSetDomain, Solution},
         value::StandardValue,
     },
 };
 use rand::prelude::*;
+use rand_chacha::ChaCha8Rng;
+use rand_core::SeedableRng;
 
 // 1. Define the problem-specific types
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -66,23 +70,27 @@ impl DomainSemantics for MySemantics {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(long, default_value_t = 100)]
+    #[arg(long, default_value_t = 30)]
     num_people: u32,
 
-    #[arg(long, default_value_t = 5)]
+    #[arg(long, default_value_t = 4)]
     path_length: u32,
 
     #[arg(long, default_value_t = 0.1)]
     connection_density: f64,
 
-    #[arg(long, default_value_t = 5)]
+    #[arg(long, default_value_t = 4)]
     max_depth: u32,
+
+    #[arg(long)]
+    seed: Option<u64>,
 }
 
 fn generate_graph(
     num_people: u32,
     path_length: u32,
     connection_density: f64,
+    rng: &mut impl Rng,
 ) -> (
     Vec<Person>,
     Person,
@@ -90,7 +98,6 @@ fn generate_graph(
     std::collections::HashSet<Vec<MyValue>>,
     std::collections::HashSet<Vec<MyValue>>,
 ) {
-    let mut rng = rand::thread_rng();
     let people: Vec<Person> = (0..num_people).map(Person).collect();
 
     let mut friends = std::collections::HashSet::new();
@@ -98,7 +105,7 @@ fn generate_graph(
 
     // 1. Create the "golden path"
     let mut path_people = people.clone();
-    path_people.shuffle(&mut rng);
+    path_people.shuffle(rng);
     let golden_path: Vec<Person> = path_people.into_iter().take(path_length as usize).collect();
 
     for window in golden_path.windows(2) {
@@ -120,8 +127,8 @@ fn generate_graph(
     // 2. Add random connections
     let num_connections = (num_people as f64 * num_people as f64 * connection_density) as usize;
     for _ in 0..num_connections {
-        let p1 = people.choose(&mut rng).unwrap().clone();
-        let p2 = people.choose(&mut rng).unwrap().clone();
+        let p1 = people.choose(rng).unwrap().clone();
+        let p2 = people.choose(rng).unwrap().clone();
         if p1 == p2 {
             continue;
         }
@@ -168,6 +175,7 @@ fn new_bool_var(
 }
 
 fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
     let args = Args::parse();
     assert!(
         args.path_length <= args.num_people,
@@ -178,8 +186,16 @@ fn main() -> Result<()> {
         "Max depth must be at least the actual path length."
     );
 
-    let (people, start_person, end_person, friends_data, colleagues_data) =
-        generate_graph(args.num_people, args.path_length, args.connection_density);
+    let seed = args.seed.unwrap_or_else(random);
+    println!("Running with seed: {}", seed);
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
+    let (people, start_person, end_person, friends_data, colleagues_data) = generate_graph(
+        args.num_people,
+        args.path_length,
+        args.connection_density,
+        &mut rng,
+    );
 
     let mut domains = HashMap::new();
     let mut constraints: Vec<MyConstraint> = vec![];
@@ -250,12 +266,18 @@ fn main() -> Result<()> {
         .collect::<Vec<_>>();
 
     let solver = SolverEngine::new(
-        Box::new(SelectFirstHeuristic),
-        Box::new(IdentityValueHeuristic),
+        Box::new(MinimumRemainingValuesHeuristic),
+        Box::new(DeterministicIdentityValueHeuristic),
     );
 
     let (solution, stats) = solver.solve(&built_constraints, initial_solution)?;
-    println!("Stats: {:?}", stats);
+    println!("Stats: {:#?}", stats);
+
+    println!("\nConstraint Performance:");
+    println!(
+        "{}",
+        plico::solver::stats::render_stats_table(&stats, &built_constraints)
+    );
 
     if let Some(solution) = solution {
         let final_end_val = solution

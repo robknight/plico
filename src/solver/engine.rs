@@ -121,7 +121,7 @@ impl<S: DomainSemantics + std::fmt::Debug> SolverEngine<S> {
         // using the order provided by the configured heuristic.
         for value in self.value_heuristic.order_values(&domain) {
             // Create a new candidate solution with the variable assigned to the chosen value.
-            let new_domain = Box::new(HashSetDomain::new(im::hashset! {value.clone()}));
+            let new_domain = Box::new(HashSetDomain::new(im::hashset! {value}));
             let new_domains = solution.domains.update(var_to_branch, new_domain);
             let guess_solution = Solution {
                 domains: new_domains,
