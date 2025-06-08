@@ -1,4 +1,5 @@
-//! Heuristics for selecting which variable to branch on next during the search.
+//! Defines a collection of standard heuristics for selecting which variable
+//! to branch on next during the search process.
 
 use crate::solver::{engine::VariableId, semantics::DomainSemantics, solution::Solution};
 
@@ -23,7 +24,10 @@ pub trait VariableSelectionHeuristic<S: DomainSemantics> {
     fn select_variable(&self, solution: &Solution<S>) -> Option<VariableId>;
 }
 
-/// A simple heuristic that selects the first unassigned variable it finds.
+/// A simple heuristic that selects the first unassigned variable it finds,
+/// ordered by [`VariableId`].
+///
+/// This provides a basic, deterministic way to select variables.
 pub struct SelectFirstHeuristic;
 
 impl<S: DomainSemantics> VariableSelectionHeuristic<S> for SelectFirstHeuristic {
@@ -57,8 +61,14 @@ impl<S: DomainSemantics> VariableSelectionHeuristic<S> for RandomVariableHeurist
     }
 }
 
-/// A heuristic that selects the variable with the Minimum Remaining Values (MRV) in its domain.
-/// This is a "fail-first" strategy, aiming to tackle the most constrained parts of the problem early.
+/// A heuristic that selects the variable with the Minimum Remaining Values (MRV)
+/// in its domain.
+///
+/// This is a "fail-first" strategy that prioritizes the most constrained
+/// variable. The idea is to tackle the most difficult parts of the problem
+/// early, which can lead to faster pruning of the search space. In case of a
+/// tie, the variable with the lower [`VariableId`] is chosen to ensure
+/// determinism.
 pub struct MinimumRemainingValuesHeuristic;
 
 impl<S: DomainSemantics> VariableSelectionHeuristic<S> for MinimumRemainingValuesHeuristic {

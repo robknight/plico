@@ -22,6 +22,7 @@ pub struct EqualConstraint<S: DomainSemantics + std::fmt::Debug> {
 }
 
 impl<S: DomainSemantics + std::fmt::Debug> EqualConstraint<S> {
+    /// Creates a new `EqualConstraint` that enforces `?a == ?b`.
     pub fn new(a: VariableId, b: VariableId) -> Self {
         Self {
             vars: [a, b],
@@ -67,5 +68,100 @@ impl<S: DomainSemantics + std::fmt::Debug> Constraint<S> for EqualConstraint<S> 
         } else {
             Ok(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use im::HashMap;
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+    use crate::solver::{
+        solution::{DomainRepresentation, HashSetDomain},
+        value::StandardValue,
+    };
+
+    // --- Test Setup ---
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct TestValue(StandardValue);
+
+    impl From<StandardValue> for TestValue {
+        fn from(v: StandardValue) -> Self {
+            Self(v)
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestSemantics;
+
+    impl DomainSemantics for TestSemantics {
+        type Value = TestValue;
+        type ConstraintDefinition = ();
+        type VariableMetadata = ();
+
+        fn build_constraint(
+            &self,
+            _definition: &Self::ConstraintDefinition,
+        ) -> Box<dyn Constraint<Self>> {
+            unimplemented!("Not needed for constraint unit tests")
+        }
+    }
+
+    fn int_val(i: i64) -> TestValue {
+        TestValue(StandardValue::Int(i))
+    }
+
+    // --- Tests ---
+
+    #[test]
+    fn revise_prunes_target_domain_to_intersection() {
+        let a: VariableId = 0;
+        let b: VariableId = 1;
+        let constraint = EqualConstraint::<TestSemantics>::new(a, b);
+
+        let domains = im::hashmap! {
+            a => Box::new(HashSetDomain::new(
+                    [int_val(1), int_val(2), int_val(3)].into_iter().collect()
+                )) as Box<dyn DomainRepresentation<TestValue>>,
+            b => Box::new(HashSetDomain::new(
+                    [int_val(2), int_val(3), int_val(4)].into_iter().collect()
+                )) as Box<dyn DomainRepresentation<TestValue>>,
+        };
+        let solution = Solution::new(domains, HashMap::new(), Arc::new(TestSemantics));
+
+        let new_solution = constraint.revise(&a, &solution).unwrap().unwrap();
+        let new_a_domain = new_solution.domains.get(&a).unwrap();
+        let expected_domain: im::HashSet<TestValue> =
+            [int_val(2), int_val(3)].into_iter().collect();
+
+        assert_eq!(new_a_domain.len(), 2);
+        assert_eq!(
+            new_a_domain.iter().cloned().collect::<im::HashSet<_>>(),
+            expected_domain
+        );
+    }
+
+    #[test]
+    fn revise_does_nothing_if_already_consistent() {
+        let a: VariableId = 0;
+        let b: VariableId = 1;
+        let constraint = EqualConstraint::<TestSemantics>::new(a, b);
+
+        let domains = im::hashmap! {
+            a => Box::new(HashSetDomain::new(
+                    [int_val(2), int_val(3)].into_iter().collect()
+                )) as Box<dyn DomainRepresentation<TestValue>>,
+            b => Box::new(HashSetDomain::new(
+                    [int_val(2), int_val(3), int_val(4)].into_iter().collect()
+                )) as Box<dyn DomainRepresentation<TestValue>>,
+        };
+        let solution = Solution::new(domains, HashMap::new(), Arc::new(TestSemantics));
+
+        let result = constraint.revise(&a, &solution).unwrap();
+        assert!(result.is_none());
     }
 }

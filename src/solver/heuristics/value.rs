@@ -1,8 +1,5 @@
 use crate::solver::{
-    engine::VariableId,
-    semantics::DomainSemantics,
-    solution::{Domain, Solution},
-    value::ValueOrdering,
+    engine::VariableId, semantics::DomainSemantics, solution::Solution, value::ValueOrdering,
 };
 
 /// A trait for strategies that determine the order of values to try for a variable.
@@ -28,7 +25,10 @@ pub trait ValueOrderingHeuristic<S: DomainSemantics> {
 }
 
 /// A simple heuristic that returns values in their natural iteration order.
-/// This is NOT deterministic for domains like HashSetDomain.
+///
+/// **Warning:** The iteration order is not guaranteed to be the same across
+/// different runs for domains that do not have a defined order (like
+/// [`HashSetDomain`]), making this heuristic non-deterministic for such cases.
 pub struct IdentityValueHeuristic;
 
 impl<S: DomainSemantics> ValueOrderingHeuristic<S> for IdentityValueHeuristic {
@@ -45,8 +45,11 @@ impl<S: DomainSemantics> ValueOrderingHeuristic<S> for IdentityValueHeuristic {
     }
 }
 
-/// A heuristic that returns values in a stable, sorted order.
-/// This requires that the values can be ordered.
+/// A heuristic that returns values in a stable, sorted order, ensuring
+/// deterministic behavior.
+///
+/// This requires that the value type implements [`ValueOrdering`] (and therefore
+/// `Ord`).
 pub struct DeterministicIdentityValueHeuristic;
 
 impl<S: DomainSemantics> ValueOrderingHeuristic<S> for DeterministicIdentityValueHeuristic
@@ -109,7 +112,7 @@ where
         preferred_values.sort();
         other_values.sort();
 
-        Box::new(preferred_values.into_iter().chain(other_values.into_iter()))
+        Box::new(preferred_values.into_iter().chain(other_values))
     }
 }
 

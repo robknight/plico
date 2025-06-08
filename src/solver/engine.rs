@@ -1,56 +1,64 @@
 use std::collections::HashMap;
 
-use tracing::debug;
-
 use crate::{
     error::Result,
     solver::{
         constraint::Constraint, semantics::DomainSemantics, solution::Solution,
-        strategy::SearchStrategy, work_list::WorkList,
+        strategy::SearchStrategy,
     },
 };
 
+/// A numeric identifier for a single variable in the constraint problem.
 pub type VariableId = u32;
+/// A numeric identifier for a single constraint in the constraint problem.
 pub type ConstraintId = usize;
 
+/// Holds performance statistics for a single constraint.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PerConstraintStats {
+    /// The number of times the `revise` method was called for this constraint.
     pub revisions: u64,
+    /// The number of times this constraint successfully pruned a variable's domain.
     pub prunings: u64,
+    /// The total time spent executing the `revise` method for this constraint, in microseconds.
     pub time_spent_micros: u64,
 }
 
+/// Holds statistics for the entire search process.
 #[derive(Debug, Default)]
 pub struct SearchStats {
+    /// The total number of nodes (states) visited in the search tree.
     pub nodes_visited: u64,
+    /// The total number of times the search backtracked.
     pub backtracks: u64,
+    /// A map from [`ConstraintId`] to the performance statistics for that constraint.
     pub constraint_stats: HashMap<ConstraintId, PerConstraintStats>,
 }
 
 /// The main engine for solving constraint satisfaction problems.
 ///
-/// The `SolverEngine` is responsible for taking a problem definition—a set of
-/// variables, their domains, and a list of constraints—and finding a solution
-/// that satisfies all constraints.
-///
-/// It uses a combination of constraint propagation (the AC-3 algorithm) and
-/// backtracking search to explore the solution space.
+/// The `SolverEngine` is responsible for orchestrating the search process. It
+/// takes a problem definition—a set of variables, their domains, and a list of
+/// constraints—and finds a solution by delegating to a configurable
+/// [`SearchStrategy`].
 pub struct SolverEngine<S: DomainSemantics> {
     strategy: Box<dyn SearchStrategy<S>>,
 }
 
 impl<S: DomainSemantics + std::fmt::Debug> SolverEngine<S> {
-    /// Creates a new `SolverEngine` with the specified heuristics.
+    /// Creates a new `SolverEngine` with the specified search strategy.
+    ///
+    /// The strategy defines the algorithm used to find a solution (e.g.,
+    /// simple backtracking, restarts, etc.).
     pub fn new(strategy: Box<dyn SearchStrategy<S>>) -> Self {
         Self { strategy }
     }
 
     /// Attempts to solve the given constraint satisfaction problem.
     ///
-    /// This method first applies constraint propagation to achieve arc consistency,
-    /// which prunes the domains of variables. If the problem is not solved by
-    /// propagation alone, it proceeds with a backtracking search to find a
-    /// complete assignment.
+    /// This method delegates the entire solving process to the [`SearchStrategy`]
+    /// that was provided when the engine was created. The strategy will explore
+    /// the search space to find a solution that satisfies all constraints.
     ///
     /// # Arguments
     ///
@@ -70,76 +78,5 @@ impl<S: DomainSemantics + std::fmt::Debug> SolverEngine<S> {
         initial_solution: Solution<S>,
     ) -> Result<(Option<Solution<S>>, SearchStats)> {
         self.strategy.solve(constraints, initial_solution)
-    }
-
-    /// Establishes arc-consistency using the AC-3 algorithm.
-    pub fn arc_consistency(
-        &self,
-        constraints: &[Box<dyn Constraint<S>>],
-        initial_solution: Solution<S>,
-        stats: &mut SearchStats,
-    ) -> Result<Option<Solution<S>>> {
-        let mut solution = initial_solution;
-
-        // Build the dependency graph.
-        let mut dependency_graph: HashMap<VariableId, Vec<usize>> = HashMap::new();
-        for (i, constraint) in constraints.iter().enumerate() {
-            for var_id in constraint.variables() {
-                dependency_graph.entry(*var_id).or_default().push(i);
-            }
-        }
-
-        // Initialize the worklist with all arcs.
-        let mut worklist = WorkList::new();
-        for (constraint_id, constraint) in constraints.iter().enumerate() {
-            for var_id in constraint.variables() {
-                worklist.push_back(constraint.priority(), *var_id, constraint_id);
-            }
-        }
-
-        // Main propagation loop (AC-3)
-        while let Some((target_var, constraint_id)) = worklist.pop_front() {
-            let constraint = &constraints[constraint_id];
-            let constraint_stats = stats.constraint_stats.entry(constraint_id).or_default();
-
-            let start_time = std::time::Instant::now();
-            constraint_stats.revisions += 1;
-
-            if let Some(new_solution) = constraint.revise(&target_var, &solution)? {
-                let old_domain_size = solution.domains.get(&target_var).unwrap().len();
-                let new_domain_size = new_solution.domains.get(&target_var).unwrap().len();
-
-                if new_domain_size == 0 {
-                    return Ok(None); // Inconsistent
-                }
-
-                if new_domain_size < old_domain_size {
-                    constraint_stats.prunings += 1;
-                    solution = new_solution;
-
-                    // The domain of `target_var` has shrunk. We need to re-check all
-                    // other constraints that involve `target_var`.
-                    if let Some(dependent_constraints) = dependency_graph.get(&target_var) {
-                        for &dep_constraint_id in dependent_constraints {
-                            for &neighbor_var in constraints[dep_constraint_id].variables() {
-                                if neighbor_var != target_var {
-                                    worklist.push_back(
-                                        constraint.priority(),
-                                        neighbor_var,
-                                        dep_constraint_id,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            constraint_stats.time_spent_micros += start_time.elapsed().as_micros() as u64;
-        }
-
-        debug!("Solver loop finished successfully");
-
-        // If we reach here, the solution is arc-consistent.
-        Ok(Some(solution))
     }
 }

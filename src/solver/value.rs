@@ -19,10 +19,24 @@ impl<T> ValueOrdering for T where T: ValueEquality + Ord {}
 /// numerical types.
 pub trait ValueArithmetic: ValueEquality {
     /// Adds two values.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the underlying types do not support addition
+    /// (e.g., attempting to add boolean values).
     fn add(&self, other: &Self) -> Self;
     /// Subtracts one value from another.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the underlying types do not support subtraction.
     fn sub(&self, other: &Self) -> Self;
     /// Returns the absolute value of the value.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the underlying type does not support the
+    /// absolute value operation.
     fn abs(&self) -> Self;
 }
 
@@ -32,8 +46,16 @@ pub trait ValueArithmetic: ValueEquality {
 /// and calculate its size.
 pub trait ValueRange: ValueOrdering {
     /// Returns the next value in the sequence.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the value has no logical successor (e.g., a boolean).
     fn successor(&self) -> Self;
     /// Calculates the number of steps between two values.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if a distance cannot be calculated between the types.
     fn distance(&self, other: &Self) -> u64;
 }
 
@@ -45,7 +67,7 @@ pub trait ValueRange: ValueOrdering {
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use plico::solver::value::StandardValue;
 ///
 /// // A custom value type for a hypothetical problem.

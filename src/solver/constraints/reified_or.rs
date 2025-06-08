@@ -128,3 +128,164 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use im::HashMap;
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+    use crate::solver::{
+        solution::{DomainRepresentation, HashSetDomain},
+        value::StandardValue,
+    };
+
+    // --- Test Setup ---
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct TestValue(StandardValue);
+
+    impl From<StandardValue> for TestValue {
+        fn from(v: StandardValue) -> Self {
+            Self(v)
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestSemantics;
+
+    impl DomainSemantics for TestSemantics {
+        type Value = TestValue;
+        type ConstraintDefinition = ();
+        type VariableMetadata = ();
+
+        fn build_constraint(
+            &self,
+            _definition: &Self::ConstraintDefinition,
+        ) -> Box<dyn Constraint<Self>> {
+            unimplemented!("Not needed for constraint unit tests")
+        }
+    }
+
+    fn bool_val(b: bool) -> TestValue {
+        TestValue(StandardValue::Bool(b))
+    }
+
+    fn bool_domain() -> Box<dyn DomainRepresentation<TestValue>> {
+        Box::new(HashSetDomain::new(
+            [bool_val(true), bool_val(false)].into_iter().collect(),
+        ))
+    }
+
+    fn domain_from_slice(values: &[bool]) -> Box<dyn DomainRepresentation<TestValue>> {
+        Box::new(HashSetDomain::new(
+            values.iter().map(|&b| bool_val(b)).collect(),
+        ))
+    }
+
+    // --- Tests ---
+
+    #[test]
+    fn revise_propagates_from_input_to_output_true() {
+        let b_out = 0;
+        let b_in1 = 1;
+        let b_in2 = 2;
+        let constraint = ReifiedOrConstraint::<TestSemantics>::new(b_out, vec![b_in1, b_in2]);
+
+        let domains = im::hashmap! {
+            b_out => bool_domain(),
+            b_in1 => domain_from_slice(&[true]),
+            b_in2 => domain_from_slice(&[false]),
+        };
+        let solution = Solution::new(domains, HashMap::new(), Arc::new(TestSemantics));
+        let new_solution = constraint.revise(&b_out, &solution).unwrap().unwrap();
+
+        let new_b_out_domain = new_solution.domains.get(&b_out).unwrap();
+        assert!(new_b_out_domain.is_singleton());
+        assert_eq!(
+            new_b_out_domain.get_singleton_value().unwrap(),
+            bool_val(true)
+        );
+    }
+
+    #[test]
+    fn revise_propagates_from_input_to_output_false() {
+        let b_out = 0;
+        let b_in1 = 1;
+        let b_in2 = 2;
+        let constraint = ReifiedOrConstraint::<TestSemantics>::new(b_out, vec![b_in1, b_in2]);
+
+        let domains = im::hashmap! {
+            b_out => bool_domain(),
+            b_in1 => domain_from_slice(&[false]),
+            b_in2 => domain_from_slice(&[false]),
+        };
+        let solution = Solution::new(domains, HashMap::new(), Arc::new(TestSemantics));
+        let new_solution = constraint.revise(&b_out, &solution).unwrap().unwrap();
+
+        let new_b_out_domain = new_solution.domains.get(&b_out).unwrap();
+        assert!(new_b_out_domain.is_singleton());
+        assert_eq!(
+            new_b_out_domain.get_singleton_value().unwrap(),
+            bool_val(false)
+        );
+    }
+
+    #[test]
+    fn revise_propagates_from_output_to_inputs_false() {
+        let b_out = 0;
+        let b_in1 = 1;
+        let b_in2 = 2;
+        let constraint = ReifiedOrConstraint::<TestSemantics>::new(b_out, vec![b_in1, b_in2]);
+
+        let domains = im::hashmap! {
+            b_out => domain_from_slice(&[false]),
+            b_in1 => bool_domain(),
+            b_in2 => bool_domain(),
+        };
+        let solution = Solution::new(domains, HashMap::new(), Arc::new(TestSemantics));
+        let new_solution = constraint.revise(&b_in1, &solution).unwrap().unwrap();
+
+        let new_b_in1_domain = new_solution.domains.get(&b_in1).unwrap();
+        assert!(new_b_in1_domain.is_singleton());
+        assert_eq!(
+            new_b_in1_domain.get_singleton_value().unwrap(),
+            bool_val(false)
+        );
+
+        let new_b_in2_domain = new_solution.domains.get(&b_in2).unwrap();
+        assert!(new_b_in2_domain.is_singleton());
+        assert_eq!(
+            new_b_in2_domain.get_singleton_value().unwrap(),
+            bool_val(false)
+        );
+    }
+
+    #[test]
+    fn revise_does_nothing_if_insufficient_info() {
+        let b_out = 0;
+        let b_in1 = 1;
+        let b_in2 = 2;
+        let constraint = ReifiedOrConstraint::<TestSemantics>::new(b_out, vec![b_in1, b_in2]);
+
+        // Case 1: Output is true, inputs are ambiguous
+        let domains1 = im::hashmap! {
+            b_out => domain_from_slice(&[true]),
+            b_in1 => bool_domain(),
+            b_in2 => bool_domain(),
+        };
+        let solution1 = Solution::new(domains1, HashMap::new(), Arc::new(TestSemantics));
+        assert!(constraint.revise(&b_in1, &solution1).unwrap().is_none());
+
+        // Case 2: Output is ambiguous, one input is false, one is ambiguous
+        let domains2 = im::hashmap! {
+            b_out => bool_domain(),
+            b_in1 => domain_from_slice(&[false]),
+            b_in2 => bool_domain(),
+        };
+        let solution2 = Solution::new(domains2, HashMap::new(), Arc::new(TestSemantics));
+        assert!(constraint.revise(&b_out, &solution2).unwrap().is_none());
+    }
+}

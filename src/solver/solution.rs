@@ -8,16 +8,23 @@ use crate::solver::{
     value::{ValueEquality, ValueOrdering, ValueRange},
 };
 
-// V is a type that implements the ValueEquality trait, e.g., Pod2Value or SudokuValue
+/// A type alias for a boxed, dynamically-dispatchable [`DomainRepresentation`].
+///
+/// This allows the solver to work with different domain implementations
+/// (e.g., `HashSetDomain`, `RangeDomain`) through a single, consistent interface.
 pub type Domain<V> = Box<dyn DomainRepresentation<V>>;
+
+/// A type alias for the persistent map holding the domains for all variables.
 pub type Domains<V> = HashMap<VariableId, Domain<V>>;
 
 /// Represents a single, immutable state in the solver's search space.
 ///
 /// A `Solution` holds the current domain of possible values for every
 /// variable in the problem. Because it uses persistent (immutable) data
-/// structures, it can be cloned cheaply. When a constraint prunes a domain,
-/// a new `Solution` is created rather than modifying the existing one.
+/// structures from the `im` crate, it can be cloned cheaply. When a constraint
+/// prunes a domain, a new `Solution` is created with the updated domain, rather
+/// than modifying the existing one in place. This is crucial for backtracking
+/// search and simplifies state management.
 #[derive(Clone, Debug)]
 pub struct Solution<S: DomainSemantics> {
     /// A map from each variable's ID to its current domain of possible values.
@@ -29,18 +36,10 @@ pub struct Solution<S: DomainSemantics> {
 }
 
 impl<S: DomainSemantics> Solution<S> {
-    /// Checks if every variable's domain is a singleton.
+    /// Checks if the solution is complete, meaning every variable's domain
+    /// has been pruned to a single value.
     pub fn is_complete(&self) -> bool {
         self.domains.values().all(|domain| domain.is_singleton())
-    }
-
-    /// Selects the first variable with more than one value in its domain.
-    /// A more sophisticated heuristic (e.g., minimum remaining values) could be used here.
-    pub fn select_unassigned_variable(&self) -> Option<VariableId> {
-        self.domains
-            .iter()
-            .find(|(_, domain)| domain.len() > 1)
-            .map(|(var_id, _)| *var_id)
     }
 
     /// Creates a new solution from a set of domains, variable metadata, and semantics.
@@ -57,6 +56,8 @@ impl<S: DomainSemantics> Solution<S> {
     }
 
     /// Creates a solution with the same variable metadata and semantics, but with a new set of domains.
+    ///
+    /// This is a cheap clone operation due to the use of persistent data structures.
     pub fn clone_with_domains(&self, domains: Domains<S::Value>) -> Self {
         Self::new(
             domains,
@@ -70,12 +71,14 @@ impl<S: DomainSemantics> Solution<S> {
 ///
 /// This allows the solver to be flexible about how domains are stored (e.g.,
 /// as a hash set, a range, or a bitmask), while providing a consistent
-/// interface for the solver's algorithms.
-///
-/// This trait allows for different underlying data structures to be used for
-/// representing the set of possible values for a variable (e.g., hash sets,
-/// ordered sets, bitsets, ranges).
+/// interface for the solver's algorithms. Different representations have
+/// different performance and memory characteristics, and choosing the right
+/// one can significantly impact solver performance.
 pub trait DomainRepresentation<V: ValueEquality>: std::fmt::Debug {
+    /// Returns the domain as a `&dyn Any` to allow for downcasting to a concrete type.
+    ///
+    /// This is used, for example, to implement specialized, efficient intersections
+    /// between two domains of the same concrete type (e.g., two `RangeDomain`s).
     fn as_any(&self) -> &dyn std::any::Any;
 
     /// Returns the number of possible values in the domain.
@@ -91,18 +94,18 @@ pub trait DomainRepresentation<V: ValueEquality>: std::fmt::Debug {
         self.len() == 1
     }
 
-    /// If the domain is a singleton, returns the single value. Otherwise, `None`.
+    /// If the domain is a singleton, returns the single value. Otherwise, returns `None`.
     fn get_singleton_value(&self) -> Option<V>;
 
     /// Returns `true` if the domain contains the specified value.
     fn contains(&self, value: &V) -> bool;
 
     /// Returns an iterator over the values in the domain.
+    ///
+    /// Note: For some domain types like `RangeDomain`, this may have special
+    /// performance considerations. See the documentation on the specific
+    /// implementation.
     fn iter(&self) -> Box<dyn Iterator<Item = &V> + '_>;
-
-    fn debug_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn std::fmt::Debug> + 'a> {
-        Box::new(self.iter().map(|item| item as &dyn std::fmt::Debug))
-    }
 
     /// Creates a new domain containing only the values that satisfy the predicate.
     fn retain(&self, f: &dyn Fn(&V) -> bool) -> Box<dyn DomainRepresentation<V>>;
@@ -111,6 +114,9 @@ pub trait DomainRepresentation<V: ValueEquality>: std::fmt::Debug {
     fn clone_box(&self) -> Box<dyn DomainRepresentation<V>>;
 
     /// Creates a new domain representing the intersection of this domain and another.
+    ///
+    /// The default implementation should be correct for any two domains, but
+    /// concrete types can provide more efficient, specialized implementations.
     fn intersect(&self, other: &dyn DomainRepresentation<V>) -> Box<dyn DomainRepresentation<V>>;
 
     /// If the domain supports ordering, returns the minimum value.
@@ -247,84 +253,23 @@ impl<V: ValueOrdering> DomainRepresentation<V> for OrderedDomain<V> {
     }
 }
 
-/// A [`DomainRepresentation`] that uses an `im::OrdSet` to store values.
-///
-/// This is useful for domains where the values have a natural order.
-#[derive(Clone, Debug)]
-pub struct OrdSetDomain<V: ValueOrdering>(pub OrdSet<V>);
-
-impl<V: ValueOrdering> OrdSetDomain<V> {
-    /// Creates a new `OrdSetDomain` from an ordered set.
-    pub fn new(values: OrdSet<V>) -> Self {
-        Self(values)
-    }
-}
-
-impl<V: ValueOrdering> DomainRepresentation<V> for OrdSetDomain<V> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    fn get_singleton_value(&self) -> Option<V> {
-        if self.len() == 1 {
-            self.0.get_min().cloned()
-        } else {
-            None
-        }
-    }
-
-    fn contains(&self, value: &V) -> bool {
-        self.0.contains(value)
-    }
-
-    fn iter(&self) -> Box<dyn Iterator<Item = &V> + '_> {
-        Box::new(self.0.iter())
-    }
-
-    fn retain(&self, f: &dyn Fn(&V) -> bool) -> Box<dyn DomainRepresentation<V>> {
-        let new_set = self.0.iter().filter(|v| f(v)).cloned().collect();
-        Box::new(Self(new_set))
-    }
-
-    fn clone_box(&self) -> Box<dyn DomainRepresentation<V>> {
-        Box::new(self.clone())
-    }
-
-    fn intersect(&self, other: &dyn DomainRepresentation<V>) -> Box<dyn DomainRepresentation<V>> {
-        let other_values: im::HashSet<V> = other.iter().cloned().collect();
-        let new_inner = self
-            .0
-            .iter()
-            .filter(|v| other_values.contains(v))
-            .cloned()
-            .collect();
-        Box::new(Self(new_inner))
-    }
-
-    fn get_min_value(&self) -> Option<V>
-    where
-        V: ValueOrdering,
-    {
-        self.0.get_min().cloned()
-    }
-
-    fn get_max_value(&self) -> Option<V>
-    where
-        V: ValueOrdering,
-    {
-        self.0.get_max().cloned()
-    }
-}
-
 /// A [`DomainRepresentation`] that uses a simple `min` and `max` bound.
 ///
 /// This domain is highly efficient for problems with large, continuous ranges
 /// of values where intermediate "holes" are not needed. It uses less memory
 /// and allows for faster bounds propagation than discrete domains.
+///
+/// # Warning: Iterator Memory Leak
+///
+/// The `iter()` method for this domain has a significant side effect: it leaks
+/// memory for every value it yields. This is a deliberate trade-off to satisfy
+/// the `DomainRepresentation` trait's lifetime requirements while avoiding
+/// performance-killing allocations on every iteration for other domain types.
+/// This domain is optimized for bounds propagation (`get_min_value`, `get_max_value`,
+/// and `intersect` with other `RangeDomain`s), not for iteration.
+///
+/// **Use this domain with caution if you need to frequently iterate over the
+/// values of a large range.**
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangeDomain<V: ValueRange> {
     min: V,

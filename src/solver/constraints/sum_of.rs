@@ -175,3 +175,166 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use im::HashMap;
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+    use crate::solver::{
+        solution::{DomainRepresentation, HashSetDomain},
+        value::{StandardValue, ValueArithmetic},
+    };
+
+    // --- Test Setup ---
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    struct TestValue(StandardValue);
+
+    impl From<StandardValue> for TestValue {
+        fn from(v: StandardValue) -> Self {
+            Self(v)
+        }
+    }
+
+    impl ValueArithmetic for TestValue {
+        fn add(&self, other: &Self) -> Self {
+            match (&self.0, &other.0) {
+                (StandardValue::Int(a), StandardValue::Int(b)) => Self(StandardValue::Int(a + b)),
+                _ => panic!("Unsupported types for addition in test"),
+            }
+        }
+        fn sub(&self, other: &Self) -> Self {
+            match (&self.0, &other.0) {
+                (StandardValue::Int(a), StandardValue::Int(b)) => Self(StandardValue::Int(a - b)),
+                _ => panic!("Unsupported types for subtraction in test"),
+            }
+        }
+        fn abs(&self) -> Self {
+            match &self.0 {
+                StandardValue::Int(a) => Self(StandardValue::Int(a.abs())),
+                _ => panic!("Unsupported types for abs in test"),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestSemantics;
+
+    impl DomainSemantics for TestSemantics {
+        type Value = TestValue;
+        type ConstraintDefinition = ();
+        type VariableMetadata = ();
+
+        fn build_constraint(
+            &self,
+            _definition: &Self::ConstraintDefinition,
+        ) -> Box<dyn Constraint<Self>> {
+            unimplemented!("Not needed for constraint unit tests")
+        }
+    }
+
+    fn int_val(i: i64) -> TestValue {
+        TestValue(StandardValue::Int(i))
+    }
+
+    fn domain_from_slice(values: &[i64]) -> Box<dyn DomainRepresentation<TestValue>> {
+        Box::new(HashSetDomain::new(
+            values.iter().map(|&i| int_val(i)).collect(),
+        ))
+    }
+
+    // --- Tests ---
+
+    #[test]
+    fn revise_sum_variable_prunes_domain() {
+        let t1: VariableId = 0;
+        let t2: VariableId = 1;
+        let s: VariableId = 2;
+        let constraint = SumOfConstraint::<TestSemantics>::new(vec![t1, t2], s);
+
+        let domains = im::hashmap! {
+            t1 => domain_from_slice(&[1, 2]),
+            t2 => domain_from_slice(&[3, 4]),
+            s => domain_from_slice(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+        };
+        let solution = Solution::new(domains, HashMap::new(), Arc::new(TestSemantics));
+
+        let new_solution = constraint.revise(&s, &solution).unwrap().unwrap();
+        let new_s_domain = new_solution.domains.get(&s).unwrap();
+        let expected_domain: im::HashSet<TestValue> =
+            [int_val(4), int_val(5), int_val(6)].into_iter().collect();
+
+        assert_eq!(
+            new_s_domain.iter().cloned().collect::<im::HashSet<_>>(),
+            expected_domain
+        );
+    }
+
+    #[test]
+    fn revise_term_variable_prunes_domain() {
+        let t1: VariableId = 0;
+        let t2: VariableId = 1;
+        let s: VariableId = 2;
+        let constraint = SumOfConstraint::<TestSemantics>::new(vec![t1, t2], s);
+
+        let domains = im::hashmap! {
+            t1 => domain_from_slice(&[1, 2]),
+            t2 => domain_from_slice(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+            s => domain_from_slice(&[5, 6]),
+        };
+        let solution = Solution::new(domains, HashMap::new(), Arc::new(TestSemantics));
+
+        let new_solution = constraint.revise(&t2, &solution).unwrap().unwrap();
+        let new_t2_domain = new_solution.domains.get(&t2).unwrap();
+        let expected_domain: im::HashSet<TestValue> =
+            [int_val(3), int_val(4), int_val(5)].into_iter().collect();
+
+        assert_eq!(
+            new_t2_domain.iter().cloned().collect::<im::HashSet<_>>(),
+            expected_domain
+        );
+    }
+
+    #[test]
+    fn revise_does_nothing_if_already_consistent() {
+        let t1: VariableId = 0;
+        let t2: VariableId = 1;
+        let s: VariableId = 2;
+        let constraint = SumOfConstraint::<TestSemantics>::new(vec![t1, t2], s);
+
+        let domains = im::hashmap! {
+            t1 => domain_from_slice(&[1, 2]),
+            t2 => domain_from_slice(&[3, 4]),
+            s => domain_from_slice(&[4, 5, 6]),
+        };
+        let solution = Solution::new(domains, HashMap::new(), Arc::new(TestSemantics));
+
+        let result = constraint.revise(&s, &solution).unwrap();
+        assert!(result.is_none());
+
+        let result2 = constraint.revise(&t1, &solution).unwrap();
+        assert!(result2.is_none());
+    }
+
+    #[test]
+    fn revise_does_nothing_if_any_term_domain_is_empty() {
+        let t1: VariableId = 0;
+        let t2: VariableId = 1;
+        let s: VariableId = 2;
+        let constraint = SumOfConstraint::<TestSemantics>::new(vec![t1, t2], s);
+
+        let domains = im::hashmap! {
+            t1 => domain_from_slice(&[]),
+            t2 => domain_from_slice(&[3, 4]),
+            s => domain_from_slice(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+        };
+        let solution = Solution::new(domains, HashMap::new(), Arc::new(TestSemantics));
+
+        let result = constraint.revise(&s, &solution).unwrap();
+        assert!(result.is_none());
+    }
+}

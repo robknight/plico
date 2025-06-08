@@ -27,13 +27,29 @@ pub mod priority {
 
 #[derive(Debug, Clone)]
 pub struct ConstraintDescriptor {
+    /// The general name of the constraint type (e.g., "AllDifferent").
     pub name: String,
+    /// A specific description of this constraint instance (e.g., "?A != ?B").
     pub description: String,
 }
 
+/// The fundamental trait for all constraints in the solver.
+///
+/// A `Constraint` implements the logic for propagating information and pruning
+/// variable domains. It is the core building block for defining the rules of a
+/// constraint satisfaction problem.
 pub trait Constraint<S: DomainSemantics>: std::fmt::Debug {
+    /// Returns a slice of the [`VariableId`]s that this constraint operates on.
+    ///
+    /// This information is used by the solver engine to build a dependency graph,
+    /// so it knows which constraints to re-evaluate when a variable's domain changes.
     fn variables(&self) -> &[VariableId];
 
+    /// Returns a descriptor containing metadata about the constraint instance.
+    ///
+    /// This is used for logging, debugging, and rendering statistics. The
+    /// descriptor should provide a clear, human-readable summary of what the
+    /// constraint enforces.
     fn descriptor(&self) -> ConstraintDescriptor;
 
     /// Returns the priority of the constraint.
@@ -52,6 +68,24 @@ pub trait Constraint<S: DomainSemantics>: std::fmt::Debug {
         priority::NORMAL
     }
 
+    /// The core logic of the constraint.
+    ///
+    /// This method is called by the solver's propagation engine (e.g., AC-3).
+    /// Its goal is to prune the domain of the `target_var` by removing values
+    /// that are inconsistent with the constraint, given the current domains of
+    /// the other variables involved.
+    ///
+    /// # Arguments
+    ///
+    /// * `target_var`: The ID of the variable whose domain is to be revised.
+    /// * `solution`: The current state of the solver, containing the domains of all variables.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(new_solution))` if the domain of `target_var` was pruned. The
+    ///   `new_solution` reflects this change.
+    /// * `Ok(None)` if no changes were made to the domain of `target_var`.
+    /// * `Err(error)` if an unrecoverable error occurs.
     fn revise(
         &self,
         target_var: &VariableId,

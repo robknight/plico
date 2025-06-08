@@ -5,10 +5,9 @@ use plico::solver::{
     constraint::Constraint,
     constraints::sum_of::SumOfConstraint,
     engine::{SolverEngine, VariableId},
-    heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
     semantics::DomainSemantics,
     solution::{Domain, RangeDomain, Solution},
-    strategy::BacktrackingSearch,
+    strategy::PropagationOnlySearch,
     value::{StandardValue, ValueArithmetic, ValueRange},
 };
 
@@ -162,16 +161,10 @@ fn main() {
     println!("--- Initial Domains ---");
     print_domains(&initial_solution);
 
-    let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
-        Box::new(SelectFirstHeuristic),
-        Box::new(IdentityValueHeuristic),
-    )));
+    let solver = SolverEngine::new(PropagationOnlySearch::boxed());
     // We only run arc_consistency, not the full search, to see the pruning.
-    let mut stats = plico::solver::engine::SearchStats::default();
-    let arc_consistent_solution = solver
-        .arc_consistency(&built, initial_solution, &mut stats)
-        .unwrap()
-        .unwrap();
+    let (solution, stats) = solver.solve(&built, initial_solution).unwrap();
+    let arc_consistent_solution = solution.unwrap();
 
     println!("\n--- Pruned Domains (after arc-consistency) ---");
     print_domains(&arc_consistent_solution);
@@ -286,15 +279,9 @@ fn test_budget_arc_consistency() {
         .collect::<Vec<_>>();
 
     // 2. Run arc-consistency to prune domains
-    let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
-        Box::new(SelectFirstHeuristic),
-        Box::new(IdentityValueHeuristic),
-    )));
-    let mut stats = plico::solver::engine::SearchStats::default();
-    let solution = solver
-        .arc_consistency(&built, initial_solution, &mut stats)
-        .unwrap()
-        .unwrap();
+    let solver = SolverEngine::new(PropagationOnlySearch::boxed());
+    let (solution, _stats) = solver.solve(&built, initial_solution).unwrap();
+    let solution = solution.unwrap();
 
     // 3. Assert final domains are correctly pruned
     let get_bounds = |sol: &Solution<BudgetSemantics>, id: VariableId| {
