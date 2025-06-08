@@ -16,11 +16,18 @@ use crate::{
 pub type VariableId = u32;
 pub type ConstraintId = usize;
 
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PerConstraintStats {
+    pub revisions: u64,
+    pub prunings: u64,
+    pub time_spent_micros: u64,
+}
+
 #[derive(Debug, Default)]
 pub struct SearchStats {
     pub nodes_visited: u64,
     pub backtracks: u64,
-    pub revisions: u64,
+    pub constraint_stats: HashMap<ConstraintId, PerConstraintStats>,
 }
 
 /// The main engine for solving constraint satisfaction problems.
@@ -169,9 +176,12 @@ impl<S: DomainSemantics + std::fmt::Debug> SolverEngine<S> {
         // Main propagation loop (AC-3)
         while let Some((target_var, constraint_id)) = worklist.pop_front() {
             let constraint = &constraints[constraint_id];
+            let constraint_stats = stats.constraint_stats.entry(constraint_id).or_default();
+
+            let start_time = std::time::Instant::now();
+            constraint_stats.revisions += 1;
 
             if let Some(new_solution) = constraint.revise(&target_var, &solution)? {
-                stats.revisions += 1;
                 let old_domain_size = solution.domains.get(&target_var).unwrap().len();
                 let new_domain_size = new_solution.domains.get(&target_var).unwrap().len();
 
@@ -180,6 +190,7 @@ impl<S: DomainSemantics + std::fmt::Debug> SolverEngine<S> {
                 }
 
                 if new_domain_size < old_domain_size {
+                    constraint_stats.prunings += 1;
                     solution = new_solution;
 
                     // The domain of `target_var` has shrunk. We need to re-check all
@@ -195,6 +206,7 @@ impl<S: DomainSemantics + std::fmt::Debug> SolverEngine<S> {
                     }
                 }
             }
+            constraint_stats.time_spent_micros += start_time.elapsed().as_micros() as u64;
         }
 
         debug!("Solver loop finished successfully");

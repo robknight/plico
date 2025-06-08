@@ -58,7 +58,7 @@ impl DomainSemantics for HouseSemantics {
 
 pub fn main() {
     let _ = tracing_subscriber::fmt::try_init();
-    let (maybe_solution, stats) = solve_puzzle();
+    let (maybe_solution, stats, constraints) = solve_puzzle();
     if let Some(solution) = maybe_solution {
         println!("Solution found!");
         let alice_house = solution
@@ -83,12 +83,22 @@ pub fn main() {
         println!("Bob lives in the {:?} house.", bob_house);
         println!("Carol lives in the {:?} house.", carol_house);
         println!("\nStats:\n{:#?}", stats);
+
+        println!("\nConstraint Performance:");
+        println!(
+            "{}",
+            plico::solver::stats::render_stats_table(&stats, &constraints)
+        );
     } else {
         println!("No solution found.");
     }
 }
 
-fn solve_puzzle() -> (Option<Solution<HouseSemantics>>, SearchStats) {
+fn solve_puzzle() -> (
+    Option<Solution<HouseSemantics>>,
+    SearchStats,
+    Vec<Box<dyn Constraint<HouseSemantics>>>,
+) {
     // 1. DEFINE VARIABLES
     let alice: VariableId = 0;
     let bob: VariableId = 1;
@@ -186,18 +196,18 @@ fn solve_puzzle() -> (Option<Solution<HouseSemantics>>, SearchStats) {
         Box::new(SelectFirstHeuristic),
         Box::new(IdentityValueHeuristic),
     );
-    solver.solve(&built_constraints, initial_solution).unwrap()
+    let (solution, stats) = solver.solve(&built_constraints, initial_solution).unwrap();
+    (solution, stats, built_constraints)
 }
 
 #[cfg(test)]
 mod tests {
-    use plico::solver::engine::SearchStats;
 
     use super::*;
 
     #[test]
     fn test_house_puzzle() {
-        let (solution, _stats) = solve_puzzle();
+        let (solution, _stats, _constraints) = solve_puzzle();
         let solution = solution.expect("The puzzle should have a solution");
 
         let alice_house = solution

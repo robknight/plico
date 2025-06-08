@@ -3,7 +3,9 @@ use std::marker::PhantomData;
 use crate::{
     error::Result,
     solver::{
-        constraint::Constraint, engine::VariableId, semantics::DomainSemantics,
+        constraint::{Constraint, ConstraintDescriptor},
+        engine::VariableId,
+        semantics::DomainSemantics,
         solution::Solution,
     },
 };
@@ -31,6 +33,13 @@ impl<S: DomainSemantics> NotEqualConstraint<S> {
 impl<S: DomainSemantics + std::fmt::Debug> Constraint<S> for NotEqualConstraint<S> {
     fn variables(&self) -> &[VariableId] {
         &self.vars
+    }
+
+    fn descriptor(&self) -> ConstraintDescriptor {
+        ConstraintDescriptor {
+            name: "NotEqualConstraint".to_string(),
+            description: format!("?{} != ?{}", self.vars[0], self.vars[1]),
+        }
     }
 
     fn revise(

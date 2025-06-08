@@ -3,7 +3,9 @@ use im::HashSet;
 use crate::{
     error::Result,
     solver::{
-        constraint::Constraint, engine::VariableId, semantics::DomainSemantics,
+        constraint::{Constraint, ConstraintDescriptor},
+        engine::VariableId,
+        semantics::DomainSemantics,
         solution::Solution,
     },
 };
@@ -30,6 +32,19 @@ impl<S: DomainSemantics + std::fmt::Debug> AllDifferentConstraint<S> {
 impl<S: DomainSemantics + std::fmt::Debug> Constraint<S> for AllDifferentConstraint<S> {
     fn variables(&self) -> &[VariableId] {
         &self.vars
+    }
+
+    fn descriptor(&self) -> ConstraintDescriptor {
+        let vars_str = self
+            .vars
+            .iter()
+            .map(|v| format!("?{}", v))
+            .collect::<Vec<_>>()
+            .join(", ");
+        ConstraintDescriptor {
+            name: "AllDifferentConstraint".to_string(),
+            description: format!("AllDifferent({})", vars_str),
+        }
     }
 
     fn revise(

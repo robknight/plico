@@ -8,7 +8,10 @@ use std::marker::PhantomData;
 use crate::{
     error::Result,
     solver::{
-        constraint::Constraint, engine::VariableId, semantics::DomainSemantics, solution::Solution,
+        constraint::{Constraint, ConstraintDescriptor},
+        engine::VariableId,
+        semantics::DomainSemantics,
+        solution::Solution,
         value::StandardValue,
     },
 };
@@ -41,6 +44,19 @@ where
 {
     fn variables(&self) -> &[VariableId] {
         &self.vars
+    }
+
+    fn descriptor(&self) -> ConstraintDescriptor {
+        let vars_str = self
+            .vars
+            .iter()
+            .map(|v| format!("?{}", v))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        ConstraintDescriptor {
+            name: "BooleanOrConstraint".to_string(),
+            description: vars_str,
+        }
     }
 
     fn revise(

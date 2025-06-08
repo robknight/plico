@@ -3,7 +3,10 @@ use std::{collections::HashSet, marker::PhantomData};
 use crate::{
     error::Result,
     solver::{
-        constraint::Constraint, engine::VariableId, semantics::DomainSemantics, solution::Solution,
+        constraint::{Constraint, ConstraintDescriptor},
+        engine::VariableId,
+        semantics::DomainSemantics,
+        solution::Solution,
         value::StandardValue,
     },
 };
@@ -44,6 +47,24 @@ where
 {
     fn variables(&self) -> &[VariableId] {
         &self.all_vars
+    }
+
+    fn descriptor(&self) -> ConstraintDescriptor {
+        let terms_str = self
+            .vars
+            .iter()
+            .map(|v| format!("?{}", v))
+            .collect::<Vec<_>>()
+            .join(", ");
+        ConstraintDescriptor {
+            name: "ReifiedMemberOfConstraint".to_string(),
+            description: format!(
+                "?{} <==> IsMember(({}), [{} items])",
+                self.b,
+                terms_str,
+                self.data_set.len()
+            ),
+        }
     }
 
     fn revise(

@@ -4,5 +4,6 @@ pub mod engine;
 pub mod heuristics;
 pub mod semantics;
 pub mod solution;
+pub mod stats;
 pub mod value;
 pub mod work_list;

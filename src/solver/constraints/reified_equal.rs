@@ -9,7 +9,10 @@ use std::marker::PhantomData;
 use crate::{
     error::Result,
     solver::{
-        constraint::Constraint, engine::VariableId, semantics::DomainSemantics, solution::Solution,
+        constraint::{Constraint, ConstraintDescriptor},
+        engine::VariableId,
+        semantics::DomainSemantics,
+        solution::Solution,
         value::StandardValue,
     },
 };
@@ -42,6 +45,16 @@ where
 {
     fn variables(&self) -> &[VariableId] {
         &self.vars
+    }
+
+    fn descriptor(&self) -> ConstraintDescriptor {
+        ConstraintDescriptor {
+            name: "ReifiedEqualConstraint".to_string(),
+            description: format!(
+                "?{} <==> (?{} == ?{})",
+                self.vars[0], self.vars[1], self.vars[2]
+            ),
+        }
     }
 
     fn revise(

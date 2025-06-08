@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use crate::{
     error::Result,
     solver::{
-        constraint::Constraint,
+        constraint::{Constraint, ConstraintDescriptor},
         engine::VariableId,
         semantics::DomainSemantics,
         solution::Solution,
@@ -47,6 +47,19 @@ where
 {
     fn variables(&self) -> &[VariableId] {
         &self.all_vars
+    }
+
+    fn descriptor(&self) -> ConstraintDescriptor {
+        let terms_str = self
+            .terms
+            .iter()
+            .map(|v| format!("?{}", v))
+            .collect::<Vec<_>>()
+            .join(" + ");
+        ConstraintDescriptor {
+            name: "SumOfConstraint".to_string(),
+            description: format!("{} == ?{}", terms_str, self.sum),
+        }
     }
 
     fn revise(

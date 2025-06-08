@@ -3,7 +3,10 @@ use std::marker::PhantomData;
 use crate::{
     error::Result,
     solver::{
-        constraint::Constraint, engine::VariableId, semantics::DomainSemantics, solution::Solution,
+        constraint::{Constraint, ConstraintDescriptor},
+        engine::VariableId,
+        semantics::DomainSemantics,
+        solution::Solution,
         value::StandardValue,
     },
 };
@@ -42,6 +45,19 @@ where
 {
     fn variables(&self) -> &[VariableId] {
         &self.all_vars
+    }
+
+    fn descriptor(&self) -> ConstraintDescriptor {
+        let terms_str = self
+            .b_in
+            .iter()
+            .map(|v| format!("?{}", v))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        ConstraintDescriptor {
+            name: "ReifiedOrConstraint".to_string(),
+            description: format!("?{} <==> ({})", self.b_out, terms_str),
+        }
     }
 
     fn revise(
