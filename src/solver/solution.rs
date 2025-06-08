@@ -70,6 +70,9 @@ pub trait DomainRepresentation<V: ValueEquality>: std::fmt::Debug {
     /// If the domain is a singleton, returns the single value. Otherwise, `None`.
     fn get_singleton_value(&self) -> Option<V>;
 
+    /// Returns `true` if the domain contains the specified value.
+    fn contains(&self, value: &V) -> bool;
+
     /// Returns an iterator over the values in the domain.
     fn iter(&self) -> Box<dyn Iterator<Item = &V> + '_>;
 
@@ -123,6 +126,9 @@ impl<V: ValueEquality> DomainRepresentation<V> for HashSetDomain<V> {
         } else {
             None
         }
+    }
+    fn contains(&self, value: &V) -> bool {
+        self.0.contains(value)
     }
     fn iter(&self) -> Box<dyn Iterator<Item = &V> + '_> {
         Box::new(self.0.iter())
@@ -179,6 +185,9 @@ impl<V: ValueOrdering> DomainRepresentation<V> for OrderedDomain<V> {
         } else {
             None
         }
+    }
+    fn contains(&self, value: &V) -> bool {
+        self.0.contains(value)
     }
     fn iter(&self) -> Box<dyn Iterator<Item = &V> + '_> {
         Box::new(self.0.iter())
@@ -242,6 +251,10 @@ impl<V: ValueOrdering> DomainRepresentation<V> for OrdSetDomain<V> {
         } else {
             None
         }
+    }
+
+    fn contains(&self, value: &V) -> bool {
+        self.0.contains(value)
     }
 
     fn iter(&self) -> Box<dyn Iterator<Item = &V> + '_> {
@@ -344,6 +357,9 @@ impl<V: ValueRange> DomainRepresentation<V> for RangeDomain<V> {
         } else {
             None
         }
+    }
+    fn contains(&self, value: &V) -> bool {
+        &self.min <= value && value <= &self.max
     }
     fn iter(&self) -> Box<dyn Iterator<Item = &V> + '_> {
         // WARNING: This iterator leaks memory for each value yielded. See the

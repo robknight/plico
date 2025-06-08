@@ -113,6 +113,7 @@ pub fn solve_hardcoded_puzzle() -> (
 }
 
 fn print_grid(solution: &Solution<SudokuSemantics>, variables: &[Vec<u32>]) {
+    #[allow(clippy::needless_range_loop)]
     for r in 0..9 {
         if r % 3 == 0 && r != 0 {
             println!("- - - + - - - + - - -");

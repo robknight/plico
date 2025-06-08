@@ -3,5 +3,8 @@ pub mod all_different;
 pub mod boolean_or;
 pub mod equal;
 pub mod not_equal;
+pub mod reified_and;
 pub mod reified_equal;
+pub mod reified_member_of;
+pub mod reified_or;
 pub mod sum_of;
