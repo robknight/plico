@@ -16,6 +16,7 @@ use plico::{
         },
         semantics::DomainSemantics,
         solution::{DomainRepresentation, HashSetDomain, Solution},
+        strategy::BacktrackingSearch,
         value::StandardValue,
     },
 };
@@ -57,6 +58,7 @@ pub struct MySemantics;
 impl DomainSemantics for MySemantics {
     type Value = MyValue;
     type ConstraintDefinition = MyConstraint;
+    type VariableMetadata = ();
     fn build_constraint(&self, def: &Self::ConstraintDefinition) -> Box<dyn Constraint<Self>> {
         match def {
             MyConstraint::Equal(c) => Box::new(c.clone()),
@@ -256,19 +258,16 @@ fn main() -> Result<()> {
     )));
 
     let semantics = Arc::new(MySemantics);
-    let initial_solution = Solution {
-        domains,
-        semantics: semantics.clone(),
-    };
+    let initial_solution = Solution::new(domains, HashMap::new(), semantics.clone());
     let built_constraints = constraints
         .iter()
         .map(|c| semantics.build_constraint(c))
         .collect::<Vec<_>>();
 
-    let solver = SolverEngine::new(
+    let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
         Box::new(MinimumRemainingValuesHeuristic),
         Box::new(DeterministicIdentityValueHeuristic),
-    );
+    )));
 
     let (solution, stats) = solver.solve(&built_constraints, initial_solution)?;
     println!("Stats: {:#?}", stats);

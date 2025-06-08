@@ -8,6 +8,7 @@ use plico::solver::{
     heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
     semantics::DomainSemantics,
     solution::{Domain, OrderedDomain, Solution},
+    strategy::BacktrackingSearch,
     value::{StandardValue, ValueArithmetic},
 };
 
@@ -46,6 +47,7 @@ pub struct MagicSquareSemantics;
 impl DomainSemantics for MagicSquareSemantics {
     type Value = MagicSquareValue;
     type ConstraintDefinition = MagicSquareConstraint;
+    type VariableMetadata = ();
     fn build_constraint(&self, def: &Self::ConstraintDefinition) -> Box<dyn Constraint<Self>> {
         match def {
             MagicSquareConstraint::AllDifferent(c) => Box::new(c.clone()),
@@ -76,10 +78,7 @@ fn main() {
     );
 
     let semantics = Arc::new(MagicSquareSemantics);
-    let initial_solution = Solution {
-        domains,
-        semantics: semantics.clone(),
-    };
+    let initial_solution = Solution::new(domains, HashMap::new(), semantics.clone());
 
     let mut constraints = vec![MagicSquareConstraint::AllDifferent(
         AllDifferentConstraint::new(cell_vars.clone()),
@@ -128,10 +127,10 @@ fn main() {
 
     // 4. Solve!
     println!("Solving Magic Square...");
-    let solver = SolverEngine::new(
+    let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
         Box::new(SelectFirstHeuristic),
         Box::new(IdentityValueHeuristic),
-    );
+    )));
     let (solution, stats) = solver.solve(&built, initial_solution).unwrap();
     let solution = solution.unwrap();
 
@@ -177,10 +176,7 @@ fn test_solve_magic_square() {
     );
 
     let semantics = Arc::new(MagicSquareSemantics);
-    let initial_solution = Solution {
-        domains,
-        semantics: semantics.clone(),
-    };
+    let initial_solution = Solution::new(domains, HashMap::new(), semantics.clone());
 
     let mut constraints = vec![MagicSquareConstraint::AllDifferent(
         AllDifferentConstraint::new(cell_vars.clone()),
@@ -228,10 +224,10 @@ fn test_solve_magic_square() {
         .collect::<Vec<_>>();
 
     // Solve!
-    let solver = SolverEngine::new(
+    let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
         Box::new(SelectFirstHeuristic),
         Box::new(IdentityValueHeuristic),
-    );
+    )));
     let (solution, _stats) = solver.solve(&built, initial_solution).unwrap();
     let solution = solution.unwrap();
 

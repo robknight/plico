@@ -38,6 +38,9 @@
 //!     NotEqual(NotEqualConstraint<MySemantics>)
 //! }
 //!
+//! #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+//! pub struct MyMetadata;
+//!
 //! #[derive(Debug, Clone)]
 //! pub struct MySemantics;
 //!
@@ -45,6 +48,7 @@
 //! impl DomainSemantics for MySemantics {
 //!     type Value = MyValue;
 //!     type ConstraintDefinition = MyConstraint;
+//!     type VariableMetadata = MyMetadata;
 //!     fn build_constraint(&self, def: &Self::ConstraintDefinition) -> Box<dyn Constraint<Self>> {
 //!         match def {
 //!             MyConstraint::NotEqual(c) => Box::new(c.clone()),
@@ -61,22 +65,47 @@
 //! domains.insert(b, Box::new(HashSetDomain::new([MyValue::Std(StandardValue::Int(1))].iter().cloned().collect())) as Box<dyn DomainRepresentation<_>>);
 //!
 //! let semantics = Arc::new(MySemantics);
-//! let initial_solution = Solution { domains, semantics: semantics.clone() };
+//! let initial_solution = Solution::new(domains.clone(), im::HashMap::new(), semantics.clone());
 //!
 //! let constraints = vec![MyConstraint::NotEqual(NotEqualConstraint::new(a, b))];
 //! let built = constraints.iter().map(|c| semantics.build_constraint(c)).collect::<Vec<_>>();
 //!
 //! // 4. Solve!
 //! use plico::solver::heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic};
-//! let solver = SolverEngine::new(
+//! use plico::solver::strategy::BacktrackingSearch;
+//! let strategy = Box::new(BacktrackingSearch::new(
 //!     Box::new(SelectFirstHeuristic),
 //!     Box::new(IdentityValueHeuristic),
-//! );
+//! ));
+//! let solver = SolverEngine::new(strategy);
 //! let (solution, _stats) = solver.solve(&built, initial_solution).unwrap();
 //! let solution = solution.unwrap();
 //!
 //! let final_a_val = solution.domains.get(&a).unwrap().get_singleton_value().unwrap();
 //! assert_eq!(final_a_val, MyValue::Std(StandardValue::Int(2)));
+//!
+//! // Example with restarts
+//! use plico::solver::heuristics::{
+//!     restart::{NoRestartPolicy, RestartAfterNBacktracks},
+//!     variable::RandomVariableHeuristic,
+//! };
+//! use plico::solver::strategy::RestartingSearch;
+//!
+//! let inner_strategy = Box::new(BacktrackingSearch::<MySemantics>::new(
+//!     Box::new(RandomVariableHeuristic), // Use random selection for restarts
+//!     Box::new(IdentityValueHeuristic),
+//! ));
+//!
+//! let restart_strategy = Box::new(RestartingSearch::new(
+//!     inner_strategy,
+//!     Box::new(NoRestartPolicy), // or RestartAfterNBacktracks { max_backtracks: 10 }
+//! ));
+//!
+//! let solver_with_restarts = SolverEngine::new(restart_strategy);
+//! let restarted_domains = domains.clone();
+//! let initial_solution_for_restarts = Solution::new(restarted_domains, im::HashMap::new(), semantics.clone());
+//! // let (restarted_solution, _stats) = solver_with_restarts.solve(&built, initial_solution_for_restarts).unwrap();
+//!
 //! ```
 //!
 pub mod error;

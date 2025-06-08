@@ -5,11 +5,8 @@ use tracing::debug;
 use crate::{
     error::Result,
     solver::{
-        constraint::Constraint,
-        heuristics::{value::ValueOrderingHeuristic, variable::VariableSelectionHeuristic},
-        semantics::DomainSemantics,
-        solution::{HashSetDomain, Solution},
-        work_list::WorkList,
+        constraint::Constraint, semantics::DomainSemantics, solution::Solution,
+        strategy::SearchStrategy, work_list::WorkList,
     },
 };
 
@@ -39,20 +36,13 @@ pub struct SearchStats {
 /// It uses a combination of constraint propagation (the AC-3 algorithm) and
 /// backtracking search to explore the solution space.
 pub struct SolverEngine<S: DomainSemantics> {
-    variable_heuristic: Box<dyn VariableSelectionHeuristic<S>>,
-    value_heuristic: Box<dyn ValueOrderingHeuristic<S>>,
+    strategy: Box<dyn SearchStrategy<S>>,
 }
 
 impl<S: DomainSemantics + std::fmt::Debug> SolverEngine<S> {
     /// Creates a new `SolverEngine` with the specified heuristics.
-    pub fn new(
-        variable_heuristic: Box<dyn VariableSelectionHeuristic<S>>,
-        value_heuristic: Box<dyn ValueOrderingHeuristic<S>>,
-    ) -> Self {
-        Self {
-            variable_heuristic,
-            value_heuristic,
-        }
+    pub fn new(strategy: Box<dyn SearchStrategy<S>>) -> Self {
+        Self { strategy }
     }
 
     /// Attempts to solve the given constraint satisfaction problem.
@@ -79,73 +69,7 @@ impl<S: DomainSemantics + std::fmt::Debug> SolverEngine<S> {
         constraints: &[Box<dyn Constraint<S>>],
         initial_solution: Solution<S>,
     ) -> Result<(Option<Solution<S>>, SearchStats)> {
-        let mut stats = SearchStats::default();
-        // First, run the propagation loop to establish arc consistency.
-        let arc_consistent_solution =
-            self.arc_consistency(constraints, initial_solution, &mut stats)?;
-
-        // If propagation alone solved it or proved it unsolvable, we're done.
-        let Some(solution) = arc_consistent_solution else {
-            return Ok((None, stats));
-        };
-        if solution.is_complete() {
-            return Ok((Some(solution), stats));
-        }
-
-        // Otherwise, start the search.
-        self.search(constraints, solution, stats)
-    }
-
-    fn search(
-        &self,
-        constraints: &[Box<dyn Constraint<S>>],
-        solution: Solution<S>,
-        mut stats: SearchStats,
-    ) -> Result<(Option<Solution<S>>, SearchStats)> {
-        stats.nodes_visited += 1;
-
-        // Base case: If the solution is complete, we've found a valid assignment.
-        if solution.is_complete() {
-            return Ok((Some(solution), stats));
-        }
-
-        // Variable selection: Pick a variable to branch on using the configured heuristic.
-        let Some(var_to_branch) = self.variable_heuristic.select_variable(&solution) else {
-            // This should not be reached if `is_complete` is false, but we handle it.
-            return Ok((Some(solution), stats));
-        };
-
-        let domain = solution.domains.get(&var_to_branch).unwrap().clone();
-
-        // Value iteration: Try each value in the chosen variable's domain,
-        // using the order provided by the configured heuristic.
-        for value in self.value_heuristic.order_values(&domain) {
-            // Create a new candidate solution with the variable assigned to the chosen value.
-            let new_domain = Box::new(HashSetDomain::new(im::hashset! {value}));
-            let new_domains = solution.domains.update(var_to_branch, new_domain);
-            let guess_solution = Solution {
-                domains: new_domains,
-                semantics: solution.semantics.clone(),
-            };
-
-            // Propagate constraints with the new assignment.
-            if let Some(propagated_solution) =
-                self.arc_consistency(constraints, guess_solution, &mut stats)?
-            {
-                // If propagation succeeded, recurse.
-                let (found_solution, new_stats) =
-                    self.search(constraints, propagated_solution, stats)?;
-                stats = new_stats;
-                if found_solution.is_some() {
-                    return Ok((found_solution, stats));
-                }
-            }
-            // If arc_consistency returned None, it's a contradiction, so we backtrack.
-            stats.backtracks += 1;
-        }
-
-        // If we've tried all values for this variable and found no solution, this path is a dead end.
-        Ok((None, stats))
+        self.strategy.solve(constraints, initial_solution)
     }
 
     /// Establishes arc-consistency using the AC-3 algorithm.

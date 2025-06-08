@@ -8,10 +8,11 @@ use plico::solver::{
     heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
     semantics::DomainSemantics,
     solution::{DomainRepresentation, HashSetDomain, Solution},
+    strategy::BacktrackingSearch,
     value::StandardValue,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SudokuSemantics;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -22,6 +23,9 @@ pub enum SudokuValue {
 impl DomainSemantics for SudokuSemantics {
     /// The concrete type for a value in a cell's domain.
     type Value = SudokuValue;
+
+    /// The metadata for a variable in the Sudoku problem.
+    type VariableMetadata = ();
 
     /// The structure that defines a constraint for Sudoku.
     type ConstraintDefinition = AllDifferentConstraint<Self>;
@@ -75,10 +79,7 @@ pub fn solve_hardcoded_puzzle() -> (
     }
 
     let semantics = Arc::new(SudokuSemantics);
-    let initial_solution = Solution {
-        domains,
-        semantics: semantics.clone(),
-    };
+    let initial_solution = Solution::new(domains, HashMap::new(), semantics.clone());
 
     let mut constraints = Vec::new();
     for row in &variables {
@@ -104,10 +105,10 @@ pub fn solve_hardcoded_puzzle() -> (
         .map(|c| semantics.build_constraint(c))
         .collect();
 
-    let solver = SolverEngine::new(
+    let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
         Box::new(SelectFirstHeuristic),
         Box::new(IdentityValueHeuristic),
-    );
+    )));
     let (solution, stats) = solver.solve(&built_constraints, initial_solution).unwrap();
     (solution, stats, variables)
 }
@@ -163,6 +164,7 @@ mod tests {
         heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
         semantics::DomainSemantics,
         solution::{DomainRepresentation, HashSetDomain, Solution},
+        strategy::BacktrackingSearch,
         value::StandardValue,
     };
     use pretty_assertions::assert_eq;
@@ -232,10 +234,7 @@ mod tests {
         }
 
         let semantics = Arc::new(SudokuSemantics);
-        let initial_solution = Solution {
-            domains,
-            semantics: semantics.clone(),
-        };
+        let initial_solution = Solution::new(domains, HashMap::new(), semantics.clone());
 
         let mut constraints = Vec::new();
         for row in &variables {
@@ -261,10 +260,10 @@ mod tests {
             .map(|c| semantics.build_constraint(c))
             .collect();
 
-        let solver = SolverEngine::new(
+        let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
             Box::new(SelectFirstHeuristic),
             Box::new(IdentityValueHeuristic),
-        );
+        )));
         let (solution, _stats) = solver.solve(&built_constraints, initial_solution).unwrap();
         assert!(solution.is_none());
     }
@@ -308,10 +307,10 @@ mod tests {
             .collect();
 
         // 2. Execution
-        let solver = SolverEngine::new(
+        let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
             Box::new(SelectFirstHeuristic),
             Box::new(IdentityValueHeuristic),
-        );
+        )));
         let result = solver.solve(&built_constraints, solution);
 
         // 3. Verification
@@ -345,6 +344,7 @@ mod prop_tests {
         heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
         semantics::DomainSemantics,
         solution::{DomainRepresentation, HashSetDomain, Solution},
+        strategy::BacktrackingSearch,
         value::StandardValue,
     };
     use proptest::{
@@ -436,7 +436,7 @@ mod prop_tests {
         }
 
         let semantics = Arc::new(SudokuSemantics);
-        let initial_solution = Solution { domains, semantics };
+        let initial_solution = Solution::new(domains, HashMap::new(), semantics.clone());
 
         (initial_solution, variables)
     }
@@ -538,10 +538,10 @@ mod prop_tests {
                 .map(|c| semantics.build_constraint(c))
                 .collect();
 
-            let solver = SolverEngine::new(
+            let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
                 Box::new(SelectFirstHeuristic),
                 Box::new(IdentityValueHeuristic),
-            );
+            )));
             let result = solver.solve(&built_constraints, solution);
 
             assert!(result.is_ok());

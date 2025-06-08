@@ -11,6 +11,7 @@ use plico::solver::{
     heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
     semantics::DomainSemantics,
     solution::{DomainRepresentation, HashSetDomain, Solution},
+    strategy::BacktrackingSearch,
     value::StandardValue,
 };
 
@@ -45,6 +46,7 @@ pub struct HouseSemantics;
 impl DomainSemantics for HouseSemantics {
     type Value = HouseValue;
     type ConstraintDefinition = HouseConstraint;
+    type VariableMetadata = ();
 
     fn build_constraint(&self, def: &Self::ConstraintDefinition) -> Box<dyn Constraint<Self>> {
         match def {
@@ -182,20 +184,17 @@ fn solve_puzzle() -> (
 
     // 4. SOLVE
     let semantics = Arc::new(HouseSemantics);
-    let initial_solution = Solution {
-        domains,
-        semantics: semantics.clone(),
-    };
+    let initial_solution = Solution::new(domains, HashMap::new(), semantics.clone());
 
     let built_constraints: Vec<_> = constraints
         .iter()
         .map(|c| semantics.build_constraint(c))
         .collect();
 
-    let solver = SolverEngine::new(
+    let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
         Box::new(SelectFirstHeuristic),
         Box::new(IdentityValueHeuristic),
-    );
+    )));
     let (solution, stats) = solver.solve(&built_constraints, initial_solution).unwrap();
     (solution, stats, built_constraints)
 }

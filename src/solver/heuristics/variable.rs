@@ -38,6 +38,25 @@ impl<S: DomainSemantics> VariableSelectionHeuristic<S> for SelectFirstHeuristic 
     }
 }
 
+/// A heuristic that selects an unassigned variable at random.
+/// This is particularly useful for restart strategies.
+pub struct RandomVariableHeuristic;
+
+impl<S: DomainSemantics> VariableSelectionHeuristic<S> for RandomVariableHeuristic {
+    fn select_variable(&self, solution: &Solution<S>) -> Option<VariableId> {
+        use rand::seq::IteratorRandom;
+
+        let unassigned_vars: Vec<VariableId> = solution
+            .domains
+            .iter()
+            .filter(|(_, domain)| domain.len() > 1)
+            .map(|(var_id, _)| *var_id)
+            .collect();
+
+        unassigned_vars.into_iter().choose(&mut rand::thread_rng())
+    }
+}
+
 /// A heuristic that selects the variable with the Minimum Remaining Values (MRV) in its domain.
 /// This is a "fail-first" strategy, aiming to tackle the most constrained parts of the problem early.
 pub struct MinimumRemainingValuesHeuristic;

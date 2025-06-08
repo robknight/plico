@@ -62,10 +62,7 @@ impl<S: DomainSemantics + std::fmt::Debug> Constraint<S> for EqualConstraint<S> 
 
         if changed {
             let new_domains = solution.domains.update(*target_var, new_domain);
-            let new_solution = Solution {
-                domains: new_domains,
-                semantics: solution.semantics.clone(),
-            };
+            let new_solution = solution.clone_with_domains(new_domains);
             Ok(Some(new_solution))
         } else {
             Ok(None)

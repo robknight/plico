@@ -22,6 +22,8 @@ pub type Domains<V> = HashMap<VariableId, Domain<V>>;
 pub struct Solution<S: DomainSemantics> {
     /// A map from each variable's ID to its current domain of possible values.
     pub domains: Domains<S::Value>,
+    /// A map from each variable's ID to its semantic metadata tag.
+    pub variable_metadata: HashMap<VariableId, S::VariableMetadata>,
     /// Read-only access to the problem's semantics, shared across all solutions.
     pub semantics: Arc<S>,
 }
@@ -39,6 +41,28 @@ impl<S: DomainSemantics> Solution<S> {
             .iter()
             .find(|(_, domain)| domain.len() > 1)
             .map(|(var_id, _)| *var_id)
+    }
+
+    /// Creates a new solution from a set of domains, variable metadata, and semantics.
+    pub fn new(
+        domains: Domains<S::Value>,
+        variable_metadata: HashMap<VariableId, S::VariableMetadata>,
+        semantics: Arc<S>,
+    ) -> Self {
+        Self {
+            domains,
+            variable_metadata,
+            semantics,
+        }
+    }
+
+    /// Creates a solution with the same variable metadata and semantics, but with a new set of domains.
+    pub fn clone_with_domains(&self, domains: Domains<S::Value>) -> Self {
+        Self::new(
+            domains,
+            self.variable_metadata.clone(),
+            self.semantics.clone(),
+        )
     }
 }
 

@@ -1,19 +1,31 @@
-use std::{clone::Clone, sync::Arc};
+use std::{clone::Clone, collections::HashMap, sync::Arc};
 
-use im::HashMap;
+use im::HashMap as IMHashMap;
 use plico::solver::{
     constraint::Constraint,
     constraints::{equal::EqualConstraint, not_equal::NotEqualConstraint},
     engine::{SolverEngine, VariableId},
-    heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
+    heuristics::{
+        value::{
+            IdentityValueHeuristic, PreferUsedValuesHeuristic, SwitchingValueHeuristic,
+            ValueOrderingHeuristic,
+        },
+        variable::SelectFirstHeuristic,
+    },
     semantics::DomainSemantics,
     solution::{DomainRepresentation, HashSetDomain, Solution},
+    strategy::BacktrackingSearch,
     value::StandardValue,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MapColouringValue {
     Std(StandardValue),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MapColouringMetadata {
+    Region,
 }
 
 #[derive(Debug, Clone)]
@@ -28,6 +40,7 @@ pub struct MapColouringSemantics;
 impl DomainSemantics for MapColouringSemantics {
     type Value = MapColouringValue;
     type ConstraintDefinition = MapColouringConstraint;
+    type VariableMetadata = MapColouringMetadata;
 
     fn build_constraint(&self, def: &Self::ConstraintDefinition) -> Box<dyn Constraint<Self>> {
         match def {
@@ -62,13 +75,14 @@ pub fn create_problem() -> (Solution<MapColouringSemantics>, Vec<MapColouringCon
                 )) as Box<dyn DomainRepresentation<_>>,
             )
         })
-        .collect::<HashMap<_, _>>();
+        .collect::<IMHashMap<_, _>>();
+
+    let variable_metadata = (0..=t)
+        .map(|id| (id, MapColouringMetadata::Region))
+        .collect::<IMHashMap<_, _>>();
 
     let semantics = Arc::new(MapColouringSemantics);
-    let initial_solution = Solution {
-        domains,
-        semantics: semantics.clone(),
-    };
+    let initial_solution = Solution::new(domains, variable_metadata, semantics.clone());
 
     let constraints = vec![
         MapColouringConstraint::NotEqual(NotEqualConstraint::new(wa, nt)),
@@ -96,10 +110,19 @@ pub fn main() {
         .map(|c| semantics.build_constraint(c))
         .collect();
 
-    let solver = SolverEngine::new(
-        Box::new(SelectFirstHeuristic),
-        Box::new(IdentityValueHeuristic),
+    let mut specific_heuristics = HashMap::new();
+    specific_heuristics.insert(
+        MapColouringMetadata::Region,
+        Box::new(PreferUsedValuesHeuristic)
+            as Box<dyn ValueOrderingHeuristic<MapColouringSemantics>>,
     );
+    let value_heuristic =
+        SwitchingValueHeuristic::new(specific_heuristics, Box::new(IdentityValueHeuristic));
+
+    let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
+        Box::new(SelectFirstHeuristic),
+        Box::new(value_heuristic),
+    )));
     let result = solver.solve(&built_constraints, initial_solution);
 
     match result {
@@ -137,10 +160,23 @@ mod tests {
             .map(|c| semantics.build_constraint(c))
             .collect();
 
-        let solver = SolverEngine::new(
-            Box::new(SelectFirstHeuristic),
-            Box::new(IdentityValueHeuristic),
+        let mut specific_heuristics = HashMap::new();
+        specific_heuristics.insert(
+            MapColouringMetadata::Region,
+            Box::new(PreferUsedValuesHeuristic)
+                as Box<
+                    dyn plico::solver::heuristics::value::ValueOrderingHeuristic<
+                        MapColouringSemantics,
+                    >,
+                >,
         );
+        let value_heuristic =
+            SwitchingValueHeuristic::new(specific_heuristics, Box::new(IdentityValueHeuristic));
+
+        let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
+            Box::new(SelectFirstHeuristic),
+            Box::new(value_heuristic),
+        )));
         let result = solver.solve(&built_constraints, initial_solution);
 
         assert!(result.is_ok());
@@ -152,6 +188,14 @@ mod tests {
         for domain in solution.domains.values() {
             assert!(domain.is_singleton());
         }
+
+        // With the PreferUsedValuesHeuristic, we should find an optimal 3-coloring.
+        let colors_used: std::collections::HashSet<_> = solution
+            .domains
+            .values()
+            .map(|d| d.get_singleton_value().unwrap())
+            .collect();
+        assert_eq!(colors_used.len(), 3);
 
         // Check a couple of constraints manually.
         let wa_colour = solution.domains.get(&0).unwrap().get_singleton_value();
@@ -211,13 +255,15 @@ mod tests {
                                     as Box<dyn DomainRepresentation<_>>,
                             )
                         })
-                        .collect::<HashMap<_, _>>();
+                        .collect::<IMHashMap<_, _>>();
+
+                    let variable_metadata = (0..num_regions as u32)
+                        .map(|id| (id, MapColouringMetadata::Region))
+                        .collect::<IMHashMap<_, _>>();
 
                     let semantics = Arc::new(MapColouringSemantics);
-                    let initial_solution = Solution {
-                        domains,
-                        semantics: semantics.clone(),
-                    };
+                    let initial_solution =
+                        Solution::new(domains, variable_metadata, semantics.clone());
 
                     (num_regions, adjacencies, num_colours, initial_solution)
                 })
@@ -238,10 +284,20 @@ mod tests {
                     .map(|c| semantics.build_constraint(c))
                     .collect();
 
-                let solver = SolverEngine::new(
-                    Box::new(SelectFirstHeuristic),
+                let mut specific_heuristics = HashMap::new();
+                specific_heuristics.insert(
+                    MapColouringMetadata::Region,
+                    Box::new(PreferUsedValuesHeuristic) as Box<dyn plico::solver::heuristics::value::ValueOrderingHeuristic<MapColouringSemantics>>,
+                );
+                let value_heuristic = SwitchingValueHeuristic::new(
+                    specific_heuristics,
                     Box::new(IdentityValueHeuristic),
                 );
+
+                let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
+                    Box::new(SelectFirstHeuristic),
+                    Box::new(value_heuristic),
+                )));
                 let result = solver.solve(&built_constraints, initial_solution);
 
                 assert!(result.is_ok());

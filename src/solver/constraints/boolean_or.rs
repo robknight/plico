@@ -95,10 +95,7 @@ where
             if new_domain.len() < domain.len() {
                 let mut new_domains = solution.domains.clone();
                 new_domains.insert(last_hope_var, new_domain);
-                return Ok(Some(Solution {
-                    domains: new_domains,
-                    semantics: solution.semantics.clone(),
-                }));
+                return Ok(Some(solution.clone_with_domains(new_domains)));
             }
         }
 

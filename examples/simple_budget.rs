@@ -8,6 +8,7 @@ use plico::solver::{
     heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
     semantics::DomainSemantics,
     solution::{Domain, RangeDomain, Solution},
+    strategy::BacktrackingSearch,
     value::{StandardValue, ValueArithmetic, ValueRange},
 };
 
@@ -64,6 +65,7 @@ pub struct BudgetSemantics;
 impl DomainSemantics for BudgetSemantics {
     type Value = BudgetValue;
     type ConstraintDefinition = BudgetConstraint;
+    type VariableMetadata = ();
 
     fn build_constraint(&self, def: &Self::ConstraintDefinition) -> Box<dyn Constraint<Self>> {
         match def {
@@ -144,10 +146,7 @@ fn main() {
     );
 
     let semantics = Arc::new(BudgetSemantics);
-    let initial_solution = Solution {
-        domains,
-        semantics: semantics.clone(),
-    };
+    let initial_solution = Solution::new(domains, HashMap::new(), semantics.clone());
 
     let spending_vars = vec![food, utils, rent, entertainment, candles];
     let constraints = [BudgetConstraint::SumOf(SumOfConstraint::new(
@@ -163,10 +162,10 @@ fn main() {
     println!("--- Initial Domains ---");
     print_domains(&initial_solution);
 
-    let solver = SolverEngine::new(
+    let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
         Box::new(SelectFirstHeuristic),
         Box::new(IdentityValueHeuristic),
-    );
+    )));
     // We only run arc_consistency, not the full search, to see the pruning.
     let mut stats = plico::solver::engine::SearchStats::default();
     let arc_consistent_solution = solver
@@ -274,10 +273,7 @@ fn test_budget_arc_consistency() {
     );
 
     let semantics = Arc::new(BudgetSemantics);
-    let initial_solution = Solution {
-        domains,
-        semantics: semantics.clone(),
-    };
+    let initial_solution = Solution::new(domains, HashMap::new(), semantics.clone());
 
     let spending_vars = vec![food, utils, rent, entertainment, candles];
     let constraints = [BudgetConstraint::SumOf(SumOfConstraint::new(
@@ -290,10 +286,10 @@ fn test_budget_arc_consistency() {
         .collect::<Vec<_>>();
 
     // 2. Run arc-consistency to prune domains
-    let solver = SolverEngine::new(
+    let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
         Box::new(SelectFirstHeuristic),
         Box::new(IdentityValueHeuristic),
-    );
+    )));
     let mut stats = plico::solver::engine::SearchStats::default();
     let solution = solver
         .arc_consistency(&built, initial_solution, &mut stats)

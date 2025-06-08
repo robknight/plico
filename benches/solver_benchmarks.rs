@@ -12,16 +12,112 @@ use plico::solver::{
     },
     engine::{SolverEngine, VariableId},
     heuristics::{
+        restart::RestartAfterNBacktracks,
         value::IdentityValueHeuristic,
-        variable::{MinimumRemainingValuesHeuristic, SelectFirstHeuristic},
+        variable::{
+            MinimumRemainingValuesHeuristic, RandomVariableHeuristic, SelectFirstHeuristic,
+        },
     },
     semantics::DomainSemantics,
     solution::{DomainRepresentation, HashSetDomain, Solution},
+    strategy::{BacktrackingSearch, RestartingSearch, SearchStrategy},
     value::{StandardValue, ValueArithmetic},
 };
 use rand::prelude::*;
 
+// --- Generic Benchmark Harness ---
+
+pub trait BenchmarkProblem<S: DomainSemantics> {
+    fn name(&self) -> String;
+    fn setup(&self) -> (Vec<Box<dyn Constraint<S>>>, Solution<S>);
+}
+
+type StrategyFactory<S> = Box<dyn Fn() -> Box<dyn SearchStrategy<S>>>;
+
+fn create_strategy_palette<S>() -> Vec<(&'static str, StrategyFactory<S>)>
+where
+    S: DomainSemantics + std::fmt::Debug + 'static,
+    S::Value: 'static,
+{
+    vec![
+        (
+            "Backtracking (SelectFirst)",
+            Box::new(|| {
+                Box::new(BacktrackingSearch::new(
+                    Box::new(SelectFirstHeuristic),
+                    Box::new(IdentityValueHeuristic),
+                ))
+            }),
+        ),
+        (
+            "Backtracking (MRV)",
+            Box::new(|| {
+                Box::new(BacktrackingSearch::new(
+                    Box::new(MinimumRemainingValuesHeuristic),
+                    Box::new(IdentityValueHeuristic),
+                ))
+            }),
+        ),
+        (
+            "Restarting (Random, 50 backtracks)",
+            Box::new(|| {
+                let inner = BacktrackingSearch::new(
+                    Box::new(RandomVariableHeuristic),
+                    Box::new(IdentityValueHeuristic),
+                );
+                Box::new(RestartingSearch::new(
+                    Box::new(inner),
+                    Box::new(RestartAfterNBacktracks { max_backtracks: 50 }),
+                ))
+            }),
+        ),
+    ]
+}
+
+fn run_problem_benchmarks<S>(
+    group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>,
+    problem: &dyn BenchmarkProblem<S>,
+    strategy_palette: &[(&'static str, StrategyFactory<S>)],
+) where
+    S: DomainSemantics + std::fmt::Debug + 'static,
+    S::Value: 'static,
+{
+    let (constraints, initial_solution) = problem.setup();
+
+    for (strategy_name, strategy_factory) in strategy_palette {
+        let solver = SolverEngine::new(strategy_factory());
+        group.bench_function(*strategy_name, |b| {
+            b.iter(|| {
+                let (solution, _stats) = solver
+                    .solve(black_box(&constraints), black_box(initial_solution.clone()))
+                    .unwrap();
+                // We assert here to ensure the solver is correct, not just fast.
+                assert!(solution.is_some());
+            })
+        });
+    }
+}
+
 // --- N-Queens Benchmark Setup ---
+
+struct NQueensProblem {
+    size: usize,
+}
+
+impl BenchmarkProblem<NQueensSemantics> for NQueensProblem {
+    fn name(&self) -> String {
+        format!("N-Queens (N={})", self.size)
+    }
+
+    fn setup(
+        &self,
+    ) -> (
+        Vec<Box<dyn Constraint<NQueensSemantics>>>,
+        Solution<NQueensSemantics>,
+    ) {
+        n_queens_problem_setup(self.size)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum NQueensValue {
@@ -52,6 +148,9 @@ impl ValueArithmetic for NQueensValue {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NQueensMetadata;
+
 #[derive(Debug, Clone)]
 pub enum NQueensConstraint {
     AllDifferent(AllDifferentConstraint<NQueensSemantics>),
@@ -64,6 +163,7 @@ pub struct NQueensSemantics;
 impl DomainSemantics for NQueensSemantics {
     type Value = NQueensValue;
     type ConstraintDefinition = NQueensConstraint;
+    type VariableMetadata = NQueensMetadata;
 
     fn build_constraint(&self, def: &Self::ConstraintDefinition) -> Box<dyn Constraint<Self>> {
         match def {
@@ -96,6 +196,7 @@ fn n_queens_problem_setup(
     let semantics = Arc::new(NQueensSemantics);
     let initial_solution = Solution {
         domains,
+        variable_metadata: HashMap::new(),
         semantics: semantics.clone(),
     };
 
@@ -129,28 +230,95 @@ fn n_queens_problem_setup(
 
 fn n_queens_benchmarks(c: &mut Criterion) {
     let mut group = c.benchmark_group("N-Queens Heuristics");
-    let board_size = 10;
-    let (built_constraints, initial_solution) = n_queens_problem_setup(board_size);
 
-    group.bench_function("N=10, MinRemainingValues", |b| {
-        let solver = SolverEngine::new(
-            Box::new(MinimumRemainingValuesHeuristic),
-            Box::new(IdentityValueHeuristic),
-        );
-        b.iter(|| {
-            let (solution, _stats) = solver
-                .solve(
-                    black_box(&built_constraints),
-                    black_box(initial_solution.clone()),
-                )
-                .unwrap();
-            assert!(solution.is_some());
-        })
-    });
+    let problem = NQueensProblem { size: 10 };
+    let strategies = create_strategy_palette();
+    run_problem_benchmarks(&mut group, &problem, &strategies);
+
     group.finish();
 }
 
 // --- Degrees of Separation Benchmark Setup ---
+
+struct DegreesOfSeparationProblem {
+    num_people: u32,
+    path_length: u32,
+    connection_density: f64,
+    max_depth: u32,
+}
+
+impl BenchmarkProblem<DoSSemantics> for DegreesOfSeparationProblem {
+    fn name(&self) -> String {
+        format!(
+            "DoS (people={}, density={})",
+            self.num_people, self.connection_density
+        )
+    }
+
+    fn setup(
+        &self,
+    ) -> (
+        Vec<Box<dyn Constraint<DoSSemantics>>>,
+        Solution<DoSSemantics>,
+    ) {
+        let (people, start_person, end_person, friends_data, colleagues_data) =
+            generate_graph(self.num_people, self.path_length, self.connection_density);
+        let mut domains = HashMap::new();
+        let mut constraints: Vec<DoSConstraint> = vec![];
+        let mut next_var_id: VariableId = 0;
+        let mut var_id = || {
+            let id = next_var_id;
+            next_var_id += 1;
+            id
+        };
+        let start_node = var_id();
+        domains.insert(
+            start_node,
+            Box::new(HashSetDomain::new(
+                [DoSValue::Person(start_person)].iter().cloned().collect(),
+            )) as Box<dyn DomainRepresentation<_>>,
+        );
+        let end_node = var_id();
+        domains.insert(
+            end_node,
+            Box::new(HashSetDomain::new(
+                [DoSValue::Person(end_person.clone())]
+                    .iter()
+                    .cloned()
+                    .collect(),
+            )) as Box<dyn DomainRepresentation<_>>,
+        );
+        let (path_found_bool, path_constraints) = build_path_predicate(
+            start_node,
+            end_node,
+            &friends_data,
+            &colleagues_data,
+            &people,
+            self.max_depth,
+            &mut domains,
+            &mut var_id,
+        );
+        constraints.extend(path_constraints);
+        let b_is_true = var_id();
+        domains.insert(
+            b_is_true,
+            Box::new(HashSetDomain::new(
+                [DoSValue::Bool(true)].iter().cloned().collect(),
+            )),
+        );
+        constraints.push(DoSConstraint::Equal(EqualConstraint::new(
+            path_found_bool,
+            b_is_true,
+        )));
+        let semantics = Arc::new(DoSSemantics);
+        let initial_solution = Solution::new(domains, HashMap::new(), semantics.clone());
+        let built_constraints = constraints
+            .iter()
+            .map(|c| semantics.build_constraint(c))
+            .collect::<Vec<_>>();
+        (built_constraints, initial_solution)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Person(u32);
@@ -170,6 +338,9 @@ impl From<StandardValue> for DoSValue {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DoSMetadata;
+
 #[derive(Debug, Clone)]
 pub enum DoSConstraint {
     Equal(EqualConstraint<DoSSemantics>),
@@ -184,6 +355,8 @@ pub struct DoSSemantics;
 impl DomainSemantics for DoSSemantics {
     type Value = DoSValue;
     type ConstraintDefinition = DoSConstraint;
+    type VariableMetadata = DoSMetadata;
+
     fn build_constraint(&self, def: &Self::ConstraintDefinition) -> Box<dyn Constraint<Self>> {
         match def {
             DoSConstraint::Equal(c) => Box::new(c.clone()),
@@ -360,93 +533,44 @@ fn build_path_predicate(
 }
 
 fn degrees_of_separation_benchmark(c: &mut Criterion) {
-    let mut group = c.benchmark_group("degrees_of_separation");
+    let mut group = c.benchmark_group("Degrees of Separation");
+
     let path_length = 3;
     let max_depth = 3;
 
     for num_people in [10, 20].iter() {
         for density in [0.05, 0.1].iter() {
-            let id = format!("people={}_density={}", num_people, density);
-            group.bench_with_input(id, &(*num_people, *density), |b, &(num_people, density)| {
-                let (people, start_person, end_person, friends_data, colleagues_data) =
-                    generate_graph(num_people, path_length, density);
-                let mut domains = HashMap::new();
-                let mut constraints: Vec<DoSConstraint> = vec![];
-                let mut next_var_id: VariableId = 0;
-                let mut var_id = || {
-                    let id = next_var_id;
-                    next_var_id += 1;
-                    id
-                };
-                let start_node = var_id();
-                domains.insert(
-                    start_node,
-                    Box::new(HashSetDomain::new(
-                        [DoSValue::Person(start_person)].iter().cloned().collect(),
-                    )) as Box<dyn DomainRepresentation<_>>,
-                );
-                let end_node = var_id();
-                domains.insert(
-                    end_node,
-                    Box::new(HashSetDomain::new(
-                        [DoSValue::Person(end_person.clone())]
-                            .iter()
-                            .cloned()
-                            .collect(),
-                    )) as Box<dyn DomainRepresentation<_>>,
-                );
-                let (path_found_bool, path_constraints) = build_path_predicate(
-                    start_node,
-                    end_node,
-                    &friends_data,
-                    &colleagues_data,
-                    &people,
-                    max_depth,
-                    &mut domains,
-                    &mut var_id,
-                );
-                constraints.extend(path_constraints);
-                let b_is_true = var_id();
-                domains.insert(
-                    b_is_true,
-                    Box::new(HashSetDomain::new(
-                        [DoSValue::Bool(true)].iter().cloned().collect(),
-                    )),
-                );
-                constraints.push(DoSConstraint::Equal(EqualConstraint::new(
-                    path_found_bool,
-                    b_is_true,
-                )));
-                let semantics = Arc::new(DoSSemantics);
-                let initial_solution = Solution {
-                    domains,
-                    semantics: semantics.clone(),
-                };
-                let built_constraints = constraints
-                    .iter()
-                    .map(|c| semantics.build_constraint(c))
-                    .collect::<Vec<_>>();
-                let solver = SolverEngine::new(
-                    Box::new(SelectFirstHeuristic),
-                    Box::new(IdentityValueHeuristic),
-                );
-                b.iter(|| {
-                    let result = solver.solve(
-                        black_box(&built_constraints),
-                        black_box(initial_solution.clone()),
-                    );
-                    assert!(result.is_ok());
-                    assert!(result.unwrap().0.is_some());
-                })
-            });
+            let problem = DegreesOfSeparationProblem {
+                num_people: *num_people,
+                path_length,
+                connection_density: *density,
+                max_depth,
+            };
+
+            let strategies = create_strategy_palette();
+            let (constraints, initial_solution) = problem.setup();
+
+            for (strategy_name, strategy_factory) in strategies {
+                let id = format!("{}, {}", problem.name(), strategy_name);
+                group.bench_function(id, |b| {
+                    let solver = SolverEngine::new(strategy_factory());
+                    b.iter(|| {
+                        let (solution, _stats) = solver
+                            .solve(black_box(&constraints), black_box(initial_solution.clone()))
+                            .unwrap();
+                        assert!(solution.is_some());
+                    })
+                });
+            }
         }
     }
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    n_queens_benchmarks,
-    degrees_of_separation_benchmark
-);
+fn solver_benchmarks(c: &mut Criterion) {
+    n_queens_benchmarks(c);
+    degrees_of_separation_benchmark(c);
+}
+
+criterion_group!(benches, solver_benchmarks);
 criterion_main!(benches);

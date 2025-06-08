@@ -8,9 +8,10 @@ use plico::solver::{
         all_different::AllDifferentConstraint,
     },
     engine::{SolverEngine, VariableId},
-    heuristics::{value::IdentityValueHeuristic, variable::SelectFirstHeuristic},
+    heuristics::{value::IdentityValueHeuristic, variable::MinimumRemainingValuesHeuristic},
     semantics::DomainSemantics,
     solution::{DomainRepresentation, HashSetDomain, Solution},
+    strategy::BacktrackingSearch,
     value::{StandardValue, ValueArithmetic},
 };
 
@@ -60,6 +61,7 @@ pub struct NQueensSemantics;
 impl DomainSemantics for NQueensSemantics {
     type Value = NQueensValue;
     type ConstraintDefinition = NQueensConstraint;
+    type VariableMetadata = ();
 
     fn build_constraint(&self, def: &Self::ConstraintDefinition) -> Box<dyn Constraint<Self>> {
         match def {
@@ -95,10 +97,7 @@ fn main() {
     }
 
     let semantics = Arc::new(NQueensSemantics);
-    let initial_solution = Solution {
-        domains,
-        semantics: semantics.clone(),
-    };
+    let initial_solution = Solution::new(domains, HashMap::new(), semantics.clone());
 
     let mut constraints = vec![];
 
@@ -129,10 +128,10 @@ fn main() {
         .collect::<Vec<_>>();
 
     // 4. Solve the problem
-    let solver = SolverEngine::new(
-        Box::new(SelectFirstHeuristic),
+    let solver = SolverEngine::new(Box::new(BacktrackingSearch::new(
+        Box::new(MinimumRemainingValuesHeuristic),
         Box::new(IdentityValueHeuristic),
-    );
+    )));
     let (solution, stats) = solver.solve(&built_constraints, initial_solution).unwrap();
 
     println!("\nSearch statistics:\n{:#?}", stats);

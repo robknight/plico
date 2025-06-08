@@ -77,10 +77,7 @@ impl<S: DomainSemantics + std::fmt::Debug> Constraint<S> for AllDifferentConstra
             let changed = new_domain.len() < original_size;
             if changed {
                 let new_domains = solution.domains.update(*target_var, new_domain);
-                let new_solution = Solution {
-                    domains: new_domains,
-                    semantics: solution.semantics.clone(),
-                };
+                let new_solution = solution.clone_with_domains(new_domains);
                 return Ok(Some(new_solution));
             }
         }

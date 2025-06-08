@@ -122,10 +122,7 @@ where
         }
 
         if changed {
-            Ok(Some(Solution {
-                domains: new_domains,
-                semantics: solution.semantics.clone(),
-            }))
+            Ok(Some(solution.clone_with_domains(new_domains)))
         } else {
             Ok(None)
         }
