@@ -316,7 +316,7 @@ mod tests {
 
         // 3. Verification
         assert!(result.is_ok());
-        let maybe_solution = result.unwrap();
+        let (maybe_solution, _) = result.unwrap();
         assert!(maybe_solution.is_some(), "Solver failed to find a solution");
 
         let solved_grid = prop_tests::solution_to_grid(&maybe_solution.unwrap(), &variables);
@@ -545,7 +545,7 @@ mod prop_tests {
             let result = solver.solve(&built_constraints, solution);
 
             assert!(result.is_ok());
-            let maybe_solution = result.unwrap();
+            let (maybe_solution, _) = result.unwrap();
             assert!(maybe_solution.is_some(), "Solver failed to find a solution");
 
             let solved_grid = solution_to_grid(&maybe_solution.unwrap(), &variables);

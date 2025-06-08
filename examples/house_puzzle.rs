@@ -149,6 +149,8 @@ fn solve_puzzle() -> (Option<Solution<HouseSemantics>>, SearchStats) {
         HouseConstraint::NotEqual(NotEqualConstraint::new(alice, red_house_var)),
         // Clue 3: Bob does not live in the Green house.
         HouseConstraint::NotEqual(NotEqualConstraint::new(bob, green_house_var)),
+        // Clue 3.5: Bob does not live in the Blue house. This makes the solution unique.
+        HouseConstraint::NotEqual(NotEqualConstraint::new(bob, blue_house_var)),
         // Clue 4: At least one of the following is true...
         HouseConstraint::ReifiedEqual(ReifiedEqualConstraint::new(
             alice_is_green,
